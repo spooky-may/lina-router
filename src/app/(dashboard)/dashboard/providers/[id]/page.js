@@ -482,40 +482,47 @@ export default function ProviderDetailPage() {
     setShowBulkProxyModal(false);
   };
 
-  const handleBulkApplyProxyPool = async () => {
-    if (selectedConnectionIds.length === 0) return;
-
-    const proxyPoolId = bulkProxyPoolId === "__none__" ? null : bulkProxyPoolId;
+  const applyProxyAssignments = async (assignments) => {
     setBulkUpdatingProxy(true);
     try {
-      const results = [];
-      for (const connectionId of selectedConnectionIds) {
+      const results = await Promise.all(assignments.map(async ({ connectionId, proxyPoolId }) => {
         try {
           const res = await fetch(`/api/providers/${connectionId}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ proxyPoolId }),
           });
-          results.push(res.ok);
+          return res.ok;
         } catch (e) {
-          console.log("Error applying bulk proxy pool for", connectionId, e);
-          results.push(false);
+          console.log("Error applying proxy for", connectionId, e);
+          return false;
         }
-      }
-
-      const failedCount = results.filter((ok) => !ok).length;
-      if (failedCount > 0) {
-        alert(`Updated with ${failedCount} failed request(s).`);
-      }
-
+      }));
+      const failed = results.filter((ok) => !ok).length;
+      if (failed > 0) alert(`Updated with ${failed} failed request(s).`);
       await fetchConnections();
-      clearSelection();
       setShowBulkProxyModal(false);
-    } catch (error) {
-      console.log("Error applying bulk proxy pool:", error);
     } finally {
       setBulkUpdatingProxy(false);
     }
+  };
+
+  const handleApplySinglePool = (proxyPoolId) => {
+    const targets = connections.map((c) => ({ connectionId: c.id, proxyPoolId }));
+    return applyProxyAssignments(targets);
+  };
+
+  const handleApplyOneToOne = () => {
+    const activePools = proxyPools.filter((p) => p.isActive === true);
+    if (activePools.length === 0) {
+      alert("No active proxy pools available.");
+      return;
+    }
+    const targets = connections.map((c, i) => ({
+      connectionId: c.id,
+      proxyPoolId: activePools[i % activePools.length].id,
+    }));
+    return applyProxyAssignments(targets);
   };
 
 
@@ -566,43 +573,69 @@ export default function ProviderDetailPage() {
     </div>
   );
 
-  const bulkProxyOptions = [
-    { value: "__none__", label: "None" },
-    ...proxyPools.map((pool) => ({ value: pool.id, label: pool.name })),
-  ];
-
-  const bulkHint = selectedConnectionIds.length === 0
-    ? "Select one or more connections, then click Proxy Action."
-    : selectedProxySummary;
-
-  const canApplyBulkProxy = selectedConnectionIds.length > 0 && !bulkUpdatingProxy;
+  const activePools = proxyPools.filter((p) => p.isActive === true);
 
   const bulkActionModal = (
     <Modal
       isOpen={showBulkProxyModal}
       onClose={closeBulkProxyModal}
-      title={`Proxy Action (${selectedConnectionIds.length} selected)`}
+      title={`Apply Proxy (${connections.length} connections)`}
     >
-      <div className="flex flex-col gap-4">
-        <Select
-          label="Proxy Pool"
-          value={bulkProxyPoolId}
-          onChange={(e) => setBulkProxyPoolId(e.target.value)}
-          options={bulkProxyOptions}
-          placeholder="None"
-        />
+      <div className="flex flex-col gap-3">
+        <button
+          onClick={handleApplyOneToOne}
+          disabled={bulkUpdatingProxy || activePools.length === 0}
+          className="flex items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2.5 text-left transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="material-symbols-outlined text-primary text-[20px]">sync_alt</span>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-text-main">One-to-one (rotate)</p>
+              <p className="text-[11px] text-text-muted">
+                Distribute {activePools.length} active pool(s) across {connections.length} connection(s)
+              </p>
+            </div>
+          </div>
+          <span className="material-symbols-outlined text-text-muted">chevron_right</span>
+        </button>
 
-        <p className="text-xs text-text-muted">{bulkHint}</p>
-        <p className="text-xs text-text-muted">Selecting None will unbind selected connections from proxy pool.</p>
-
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Button onClick={handleBulkApplyProxyPool} fullWidth disabled={!canApplyBulkProxy}>
-            {bulkUpdatingProxy ? "Applying..." : "Apply"}
-          </Button>
-          <Button onClick={closeBulkProxyModal} variant="ghost" fullWidth disabled={bulkUpdatingProxy}>
-            Cancel
-          </Button>
+        <div className="border-t border-black/[0.06] dark:border-white/[0.06] pt-2">
+          <p className="px-1 pb-1 text-[11px] uppercase tracking-wide text-text-muted">Apply single pool to all</p>
+          <div className="flex flex-col">
+            <button
+              onClick={() => handleApplySinglePool(null)}
+              disabled={bulkUpdatingProxy}
+              className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-text-muted text-[18px]">link_off</span>
+                <span className="text-sm text-text-main">None (unbind all)</span>
+              </div>
+            </button>
+            {proxyPools.map((pool) => (
+              <button
+                key={pool.id}
+                onClick={() => handleApplySinglePool(pool.id)}
+                disabled={bulkUpdatingProxy || pool.isActive !== true}
+                className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="material-symbols-outlined text-text-muted text-[18px]">lan</span>
+                  <span className="truncate text-sm text-text-main">{pool.name}</span>
+                  {pool.isActive !== true && (
+                    <span className="text-[10px] text-text-muted">(inactive)</span>
+                  )}
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
+
+        {bulkUpdatingProxy && <p className="text-xs text-text-muted">Applying...</p>}
+
+        <Button onClick={closeBulkProxyModal} variant="ghost" fullWidth disabled={bulkUpdatingProxy}>
+          Cancel
+        </Button>
       </div>
     </Modal>
   );
@@ -953,6 +986,16 @@ export default function ProviderDetailPage() {
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-semibold">Connections</h2>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+              {connections.length > 0 && proxyPools.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon="lan"
+                  onClick={() => setShowBulkProxyModal(true)}
+                >
+                  Apply Proxy
+                </Button>
+              )}
               {/* Thinking config */}
               {/* {thinkingConfig && (
                 <div className="flex items-center gap-2">

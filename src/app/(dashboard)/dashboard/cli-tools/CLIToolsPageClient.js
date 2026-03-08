@@ -161,6 +161,10 @@ export default function CLIToolsPageClient({ machineId }) {
       onToggle: () => setExpandedTool(expandedTool === toolId ? null : toolId),
       baseUrl: getBaseUrl(),
       apiKeys,
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
     };
 
     switch (toolId) {
