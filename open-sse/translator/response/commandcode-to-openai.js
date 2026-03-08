@@ -5,8 +5,9 @@
  *   {"type":"start"} {"type":"start-step", ...}
  *   {"type":"reasoning-start","id":"..."} {"type":"reasoning-delta","text":"..."}
  *   {"type":"text-start","id":"..."}     {"type":"text-delta","text":"..."}
- *   {"type":"tool-input-start","toolCallId","toolName"}
- *   {"type":"tool-input-delta","toolCallId","inputTextDelta"}
+ *   {"type":"tool-input-start","id","toolName"}
+ *   {"type":"tool-input-delta","id","delta"}
+ *   {"type":"tool-input-end","id"}
  *   {"type":"tool-call","toolCallId","toolName","input"}
  *   {"type":"finish-step","finishReason","usage": {...}, ...}
  *   {"type":"finish",...}
@@ -104,7 +105,7 @@ export function convertCommandCodeToOpenAI(chunk, state) {
       break;
     }
     case "tool-input-start": {
-      const id = event.toolCallId || `call_${Date.now()}_${state.toolIndex}`;
+      const id = event.id || event.toolCallId || `call_${Date.now()}_${state.toolIndex}`;
       let idx = state.toolIndexById.get(id);
       if (idx == null) {
         idx = state.toolIndex++;
@@ -125,13 +126,13 @@ export function convertCommandCodeToOpenAI(chunk, state) {
       break;
     }
     case "tool-input-delta": {
-      const id = event.toolCallId;
+      const id = event.id || event.toolCallId;
       const idx = state.toolIndexById.get(id);
       if (idx == null) break;
       const delta = {
         tool_calls: [{
           index: idx,
-          function: { arguments: event.inputTextDelta || event.delta || "" },
+          function: { arguments: event.delta || event.inputTextDelta || "" },
         }],
       };
       out.push(makeChunk(state, delta));
@@ -178,7 +179,9 @@ export function convertCommandCodeToOpenAI(chunk, state) {
     }
     case "error": {
       state.finishReason = "stop";
-      out.push(makeChunk(state, { content: `\n\n[CommandCode error: ${event.error || event.message || "unknown"}]` }));
+      const errVal = event.error ?? event.message ?? "unknown";
+      const errStr = typeof errVal === "string" ? errVal : JSON.stringify(errVal);
+      out.push(makeChunk(state, { content: `\n\n[CommandCode error: ${errStr}]` }));
       out.push(makeChunk(state, {}, "stop"));
       break;
     }

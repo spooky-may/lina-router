@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { getProviderNodeById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
-import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
+import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
+import { openaiToCommandCode } from "open-sse/translator/request/openai-to-commandcode.js";
 import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
@@ -408,6 +409,28 @@ export async function POST(request) {
               max_tokens: 1,
               stream: false,
             }),
+          });
+          isValid = res.status !== 401 && res.status !== 403;
+          break;
+        }
+
+        case "commandcode": {
+          const cfg = PROVIDERS.commandcode;
+          const model = getDefaultModel("commandcode");
+          const payload = openaiToCommandCode(model, {
+            messages: [{ role: "user", content: "ping" }],
+            max_tokens: 1,
+            stream: false,
+          }, false);
+          const res = await fetch(cfg.baseUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(cfg.headers || {}),
+              "x-session-id": crypto.randomUUID(),
+              "Authorization": `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify(payload),
           });
           isValid = res.status !== 401 && res.status !== 403;
           break;
