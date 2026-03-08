@@ -116,6 +116,44 @@ const pendingTimers = global._pendingTimers;
 
 const PENDING_TIMEOUT_MS = 60 * 1000; // 1 minute
 
+// In-memory ring buffer for recent requests (avoids disk I/O on every SSE emit)
+const RING_CAP = 50;
+const CONN_CACHE_TTL_MS = 30 * 1000;
+if (!global._recentRing) global._recentRing = { items: [], initialized: false };
+if (!global._connectionMapCache) global._connectionMapCache = { map: {}, ts: 0 };
+const recentRing = global._recentRing;
+const connCache = global._connectionMapCache;
+
+function pushToRing(entry) {
+  recentRing.items.push(entry);
+  if (recentRing.items.length > RING_CAP) {
+    recentRing.items = recentRing.items.slice(-RING_CAP);
+  }
+}
+
+async function getConnectionMapCached() {
+  if (Date.now() - connCache.ts < CONN_CACHE_TTL_MS) return connCache.map;
+  try {
+    const { getProviderConnections } = await import("@/lib/localDb.js");
+    const allConnections = await getProviderConnections();
+    const map = {};
+    for (const conn of allConnections) map[conn.id] = conn.name || conn.email || conn.id;
+    connCache.map = map;
+    connCache.ts = Date.now();
+  } catch {}
+  return connCache.map;
+}
+
+async function ensureRingInitialized() {
+  if (recentRing.initialized) return;
+  recentRing.initialized = true;
+  try {
+    const db = await getUsageDb();
+    const history = db.data.history || [];
+    recentRing.items = history.slice(-RING_CAP);
+  } catch {}
+}
+
 /**
  * Track a pending request
  * @param {string} model
@@ -131,12 +169,19 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
   // Track by model
   if (!pendingRequests.byModel[modelKey]) pendingRequests.byModel[modelKey] = 0;
   pendingRequests.byModel[modelKey] = Math.max(0, pendingRequests.byModel[modelKey] + (started ? 1 : -1));
+  if (pendingRequests.byModel[modelKey] === 0) delete pendingRequests.byModel[modelKey];
 
   // Track by account
   if (connectionId) {
     if (!pendingRequests.byAccount[connectionId]) pendingRequests.byAccount[connectionId] = {};
     if (!pendingRequests.byAccount[connectionId][modelKey]) pendingRequests.byAccount[connectionId][modelKey] = 0;
     pendingRequests.byAccount[connectionId][modelKey] = Math.max(0, pendingRequests.byAccount[connectionId][modelKey] + (started ? 1 : -1));
+    if (pendingRequests.byAccount[connectionId][modelKey] === 0) {
+      delete pendingRequests.byAccount[connectionId][modelKey];
+      if (Object.keys(pendingRequests.byAccount[connectionId]).length === 0) {
+        delete pendingRequests.byAccount[connectionId];
+      }
+    }
   }
 
   if (started) {
@@ -174,16 +219,7 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
  */
 export async function getActiveRequests() {
   const activeRequests = [];
-
-  // Build active requests from pending state
-  let connectionMap = {};
-  try {
-    const { getProviderConnections } = await import("@/lib/localDb.js");
-    const allConnections = await getProviderConnections();
-    for (const conn of allConnections) {
-      connectionMap[conn.id] = conn.name || conn.email || conn.id;
-    }
-  } catch {}
+  const connectionMap = await getConnectionMapCached();
 
   for (const [connectionId, models] of Object.entries(pendingRequests.byAccount)) {
     for (const [modelKey, count] of Object.entries(models)) {
@@ -197,12 +233,10 @@ export async function getActiveRequests() {
     }
   }
 
-  // Get recent requests from history (re-read to get latest)
-  const db = await getUsageDb();
-  await db.read();
-  const history = db.data.history || [];
+  // Recent requests from in-memory ring (zero disk I/O)
+  await ensureRingInitialized();
   const seen = new Set();
-  const recentRequests = [...history]
+  const recentRequests = [...recentRing.items]
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
     .map((e) => {
       const t = e.tokens || {};
@@ -293,12 +327,13 @@ export async function saveRequestUsage(entry) {
     if (!db.data.dailySummary) db.data.dailySummary = {};
     aggregateEntryToDailySummary(db.data.dailySummary, entry);
 
-    const MAX_HISTORY = 10000;
+    const MAX_HISTORY = 2000;
     if (db.data.history.length > MAX_HISTORY) {
       db.data.history.splice(0, db.data.history.length - MAX_HISTORY);
     }
 
     await db.write();
+    pushToRing(entry);
     statsEmitter.emit("update");
   } catch (error) {
     console.error("Failed to save usage stats:", error);
