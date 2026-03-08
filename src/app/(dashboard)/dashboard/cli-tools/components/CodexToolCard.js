@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
+import { matchKnownEndpoint } from "./cliEndpointMatch";
 
 export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
   const [codexStatus, setCodexStatus] = useState(initialStatus || null);
@@ -64,8 +65,9 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   const getConfigStatus = () => {
     if (!codexStatus?.installed) return null;
     if (!codexStatus.config) return "not_configured";
-    const hasBaseUrl = codexStatus.config.includes(baseUrl) || codexStatus.config.includes("localhost") || codexStatus.config.includes("127.0.0.1");
-    return hasBaseUrl ? "configured" : "other";
+    const parsed = codexStatus.config.match(/base_url\s*=\s*"([^"]+)"/);
+    const currentUrl = parsed ? parsed[1] : "";
+    return matchKnownEndpoint(currentUrl, { tunnelPublicUrl, tailscaleUrl }) ? "configured" : "other";
   };
 
   const configStatus = getConfigStatus();
@@ -266,7 +268,22 @@ model = "${effectiveSubagentModel}"
           {!checkingCodex && codexStatus?.installed && (
             <>
               <div className="flex flex-col gap-2">
-                {/* Current Base URL */}
+                {/* Endpoint (selector) */}
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
+                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Select Endpoint</span>
+                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                  <BaseUrlSelect
+                    value={customBaseUrl || getDisplayUrl()}
+                    onChange={setCustomBaseUrl}
+                    requiresExternalUrl={tool.requiresExternalUrl}
+                    tunnelEnabled={tunnelEnabled}
+                    tunnelPublicUrl={tunnelPublicUrl}
+                    tailscaleEnabled={tailscaleEnabled}
+                    tailscaleUrl={tailscaleUrl}
+                  />
+                </div>
+
+                {/* Current configured */}
                 {codexStatus?.config && (() => {
                   const parsed = codexStatus.config.match(/base_url\s*=\s*"([^"]+)"/);
                   const currentBaseUrl = parsed ? parsed[1] : null;
@@ -280,21 +297,6 @@ model = "${effectiveSubagentModel}"
                     </div>
                   ) : null;
                 })()}
-
-                {/* Base URL */}
-                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
-                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Base URL</span>
-                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  <BaseUrlSelect
-                    value={customBaseUrl || getDisplayUrl()}
-                    onChange={setCustomBaseUrl}
-                    requiresExternalUrl={tool.requiresExternalUrl}
-                    tunnelEnabled={tunnelEnabled}
-                    tunnelPublicUrl={tunnelPublicUrl}
-                    tailscaleEnabled={tailscaleEnabled}
-                    tailscaleUrl={tailscaleUrl}
-                  />
-                </div>
 
                 {/* API Key */}
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">

@@ -485,20 +485,20 @@ export default function ProviderDetailPage() {
   const applyProxyAssignments = async (assignments) => {
     setBulkUpdatingProxy(true);
     try {
-      const results = await Promise.all(assignments.map(async ({ connectionId, proxyPoolId }) => {
+      let failed = 0;
+      for (const { connectionId, proxyPoolId } of assignments) {
         try {
           const res = await fetch(`/api/providers/${connectionId}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ proxyPoolId }),
           });
-          return res.ok;
+          if (!res.ok) failed += 1;
         } catch (e) {
           console.log("Error applying proxy for", connectionId, e);
-          return false;
+          failed += 1;
         }
-      }));
-      const failed = results.filter((ok) => !ok).length;
+      }
       if (failed > 0) alert(`Updated with ${failed} failed request(s).`);
       await fetchConnections();
       setShowBulkProxyModal(false);
@@ -582,53 +582,37 @@ export default function ProviderDetailPage() {
       title={`Apply Proxy (${connections.length} connections)`}
     >
       <div className="flex flex-col gap-3">
-        <button
-          onClick={handleApplyOneToOne}
-          disabled={bulkUpdatingProxy || activePools.length === 0}
-          className="flex items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2.5 text-left transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="material-symbols-outlined text-primary text-[20px]">sync_alt</span>
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-text-main">One-to-one (rotate)</p>
-              <p className="text-[11px] text-text-muted">
-                Distribute {activePools.length} active pool(s) across {connections.length} connection(s)
-              </p>
-            </div>
-          </div>
-          <span className="material-symbols-outlined text-text-muted">chevron_right</span>
-        </button>
-
-        <div className="border-t border-black/[0.06] dark:border-white/[0.06] pt-2">
-          <p className="px-1 pb-1 text-[11px] uppercase tracking-wide text-text-muted">Apply single pool to all</p>
-          <div className="flex flex-col">
+        <div className="flex flex-col">
+          <button
+            onClick={handleApplyOneToOne}
+            disabled={bulkUpdatingProxy || activePools.length === 0}
+            className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span className="material-symbols-outlined text-text-muted text-[18px]">sync_alt</span>
+            <span className="text-sm text-text-main">One-to-one (rotate)</span>
+          </button>
+          <button
+            onClick={() => handleApplySinglePool(null)}
+            disabled={bulkUpdatingProxy}
+            className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span className="material-symbols-outlined text-text-muted text-[18px]">link_off</span>
+            <span className="text-sm text-text-main">None (unbind all)</span>
+          </button>
+          {proxyPools.map((pool) => (
             <button
-              onClick={() => handleApplySinglePool(null)}
-              disabled={bulkUpdatingProxy}
-              className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+              key={pool.id}
+              onClick={() => handleApplySinglePool(pool.id)}
+              disabled={bulkUpdatingProxy || pool.isActive !== true}
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-text-muted text-[18px]">link_off</span>
-                <span className="text-sm text-text-main">None (unbind all)</span>
-              </div>
+              <span className="material-symbols-outlined text-text-muted text-[18px]">lan</span>
+              <span className="truncate text-sm text-text-main">{pool.name}</span>
+              {pool.isActive !== true && (
+                <span className="text-[10px] text-text-muted">(inactive)</span>
+              )}
             </button>
-            {proxyPools.map((pool) => (
-              <button
-                key={pool.id}
-                onClick={() => handleApplySinglePool(pool.id)}
-                disabled={bulkUpdatingProxy || pool.isActive !== true}
-                className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="material-symbols-outlined text-text-muted text-[18px]">lan</span>
-                  <span className="truncate text-sm text-text-main">{pool.name}</span>
-                  {pool.isActive !== true && (
-                    <span className="text-[10px] text-text-muted">(inactive)</span>
-                  )}
-                </div>
-              </button>
-            ))}
-          </div>
+          ))}
         </div>
 
         {bulkUpdatingProxy && <p className="text-xs text-text-muted">Applying...</p>}

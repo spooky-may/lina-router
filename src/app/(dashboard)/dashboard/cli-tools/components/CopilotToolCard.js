@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
+import { matchKnownEndpoint } from "./cliEndpointMatch";
 
 export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
   const [status, setStatus] = useState(initialStatus || null);
@@ -63,8 +64,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
     if (!status) return null;
     if (!status.has9Router) return "not_configured";
     const url = status.currentUrl || "";
-    return url.includes("localhost") || url.includes("127.0.0.1") || url.includes(baseUrl)
-      ? "configured" : "other";
+    return matchKnownEndpoint(url, { tunnelPublicUrl, tailscaleUrl }) ? "configured" : "other";
   };
 
   const configStatus = getConfigStatus();
@@ -207,7 +207,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
 
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-text-muted">Base URL</label>
+                  <label className="text-xs font-medium text-text-muted">Select Endpoint</label>
                   <BaseUrlSelect
                     value={customBaseUrl || getEffectiveBaseUrl()}
                     onChange={setCustomBaseUrl}

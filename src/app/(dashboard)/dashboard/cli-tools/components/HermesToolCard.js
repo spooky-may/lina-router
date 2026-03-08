@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
+import { matchKnownEndpoint } from "./cliEndpointMatch";
 
 const ENDPOINT = "/api/cli-tools/hermes-settings";
 
@@ -39,9 +40,7 @@ export default function HermesToolCard({
     if (!hermesStatus?.installed) return null;
     const cfg = hermesStatus.settings?.model;
     if (!cfg?.base_url) return "not_configured";
-    const localMatch = /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(cfg.base_url);
-    const tunnelMatch = baseUrl && cfg.base_url.startsWith(baseUrl);
-    if (localMatch || tunnelMatch) return "configured";
+    if (matchKnownEndpoint(cfg.base_url, { tunnelPublicUrl, tailscaleUrl })) return "configured";
     return "other";
   };
 
@@ -233,18 +232,8 @@ export default function HermesToolCard({
           {!checking && hermesStatus?.installed && (
             <>
               <div className="flex flex-col gap-2">
-                {hermesStatus?.settings?.model?.base_url && (
-                  <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
-                    <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Current</span>
-                    <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                    <span className="min-w-0 truncate rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5">
-                      {hermesStatus.settings.model.base_url}
-                    </span>
-                  </div>
-                )}
-
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
-                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Base URL</span>
+                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Select Endpoint</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                   <BaseUrlSelect
                     value={customBaseUrl || getEffectiveBaseUrl()}
@@ -256,6 +245,16 @@ export default function HermesToolCard({
                     tailscaleUrl={tailscaleUrl}
                   />
                 </div>
+
+                {hermesStatus?.settings?.model?.base_url && (
+                  <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
+                    <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Current</span>
+                    <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                    <span className="min-w-0 truncate rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5">
+                      {hermesStatus.settings.model.base_url}
+                    </span>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>

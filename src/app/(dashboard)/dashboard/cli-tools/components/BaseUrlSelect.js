@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { APP_CONFIG } from "@/shared/constants/config";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { UPDATER_CONFIG } from "@/shared/constants/config";
 
 const STORAGE_KEY = "9router.cliToolEndpointPresets";
 const CUSTOM_VALUE = "__custom__";
@@ -12,8 +12,6 @@ const ensureV1 = (url) => {
   if (!trimmed) return "";
   return /\/v1$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
 };
-
-const stripV1 = (url) => (url || "").replace(/\/v1\/?$/, "");
 
 const readSavedPresets = () => {
   if (typeof window === "undefined") return [];
@@ -31,21 +29,27 @@ const writeSavedPresets = (presets) => {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(presets));
 };
 
-// Build endpoint options ordered by priority
-const buildOptions = ({ requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, savedPresets, withV1 }) => {
+const buildOptions = ({ requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, cloudEnabled, cloudUrl, savedPresets, withV1 }) => {
   const opts = [];
-  const wrap = (url) => (withV1 ? ensureV1(url) : url.replace(/\/+$/, ""));
+  const wrap = (url) => (withV1 ? ensureV1(url) : (url || "").replace(/\/+$/, ""));
   if (!requiresExternalUrl) {
-    opts.push({ value: "local", label: `Localhost (127.0.0.1)`, url: wrap(`http://127.0.0.1:${APP_CONFIG.appPort}`) });
+    const localUrl = wrap(`http://127.0.0.1:${UPDATER_CONFIG.appPort}`);
+    opts.push({ value: "local", label: localUrl, url: localUrl });
   }
   if (tunnelEnabled && tunnelPublicUrl) {
-    opts.push({ value: "tunnel", label: `Tunnel - ${tunnelPublicUrl}`, url: wrap(tunnelPublicUrl) });
+    const u = wrap(tunnelPublicUrl);
+    opts.push({ value: "tunnel", label: u, url: u });
   }
   if (tailscaleEnabled && tailscaleUrl) {
-    opts.push({ value: "tailscale", label: `Tailscale - ${tailscaleUrl}`, url: wrap(tailscaleUrl) });
+    const u = wrap(tailscaleUrl);
+    opts.push({ value: "tailscale", label: u, url: u });
+  }
+  if (cloudEnabled && cloudUrl) {
+    const u = wrap(cloudUrl);
+    opts.push({ value: "cloud", label: u, url: u });
   }
   savedPresets.forEach((p) => {
-    opts.push({ value: `saved:${p.name}`, label: `★ ${p.name} - ${p.baseUrl}`, url: p.baseUrl, saved: true });
+    opts.push({ value: `saved:${p.name}`, label: p.baseUrl, url: p.baseUrl, saved: true });
   });
   opts.push({ value: CUSTOM_VALUE, label: "Custom URL...", url: "" });
   return opts;
@@ -59,32 +63,37 @@ export default function BaseUrlSelect({
   tunnelPublicUrl = "",
   tailscaleEnabled = false,
   tailscaleUrl = "",
+  cloudEnabled = false,
+  cloudUrl = "",
   withV1 = true,
 }) {
   const [savedPresets, setSavedPresets] = useState([]);
   const [mode, setMode] = useState("");
+  const [customInput, setCustomInput] = useState("");
+  const initializedRef = useRef(false);
 
   useEffect(() => {
     setSavedPresets(readSavedPresets());
   }, []);
 
   const options = useMemo(
-    () => buildOptions({ requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, savedPresets, withV1 }),
-    [requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, savedPresets, withV1]
+    () => buildOptions({ requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, cloudEnabled, cloudUrl, savedPresets, withV1 }),
+    [requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, cloudEnabled, cloudUrl, savedPresets, withV1]
   );
 
-  // Auto-detect mode based on current value matching an option
+  // Always default to first option (127.0.0.1) on mount, ignore persisted value
   useEffect(() => {
-    if (!value) {
-      if (options[0] && options[0].value !== CUSTOM_VALUE) {
-        setMode(options[0].value);
-        onChange(options[0].url);
-      }
-      return;
+    if (initializedRef.current) return;
+    if (options.length === 0) return;
+    initializedRef.current = true;
+    const first = options.find((o) => o.value !== CUSTOM_VALUE);
+    if (first) {
+      setMode(first.value);
+      onChange(first.url);
+    } else {
+      setMode(CUSTOM_VALUE);
     }
-    const match = options.find((o) => o.url && o.url === value);
-    setMode(match ? match.value : CUSTOM_VALUE);
-  }, [value, options]);
+  }, [options, onChange]);
 
   const handleSelect = (e) => {
     const next = e.target.value;
@@ -95,14 +104,15 @@ export default function BaseUrlSelect({
       try { defaultName = new URL(trimmed).host; } catch {}
       const name = window.prompt("Save endpoint as:", defaultName);
       if (!name?.trim()) return;
-      const next = [...savedPresets.filter((p) => p.name !== name.trim()), { name: name.trim(), baseUrl: trimmed }]
+      const updated = [...savedPresets.filter((p) => p.name !== name.trim()), { name: name.trim(), baseUrl: trimmed }]
         .sort((a, b) => a.name.localeCompare(b.name));
-      setSavedPresets(next);
-      writeSavedPresets(next);
+      setSavedPresets(updated);
+      writeSavedPresets(updated);
       return;
     }
     setMode(next);
     if (next === CUSTOM_VALUE) {
+      setCustomInput("");
       onChange("");
       return;
     }
@@ -110,18 +120,26 @@ export default function BaseUrlSelect({
     if (opt) onChange(opt.url);
   };
 
+  const handleCustomInput = (e) => {
+    const v = e.target.value;
+    setCustomInput(v);
+    onChange(v);
+  };
+
   const handleDeleteSaved = () => {
     if (!mode.startsWith("saved:")) return;
     const name = mode.slice(6);
-    const next = savedPresets.filter((p) => p.name !== name);
-    setSavedPresets(next);
-    writeSavedPresets(next);
+    const updated = savedPresets.filter((p) => p.name !== name);
+    setSavedPresets(updated);
+    writeSavedPresets(updated);
     setMode(CUSTOM_VALUE);
+    setCustomInput("");
+    onChange("");
   };
 
   const isSaved = mode.startsWith("saved:");
   const isCustom = mode === CUSTOM_VALUE;
-  const canSave = isCustom && (value || "").trim().length > 0;
+  const canSave = isCustom && (customInput || "").trim().length > 0;
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -145,8 +163,8 @@ export default function BaseUrlSelect({
       {isCustom && (
         <input
           type="text"
-          value={value || ""}
-          onChange={(e) => onChange(e.target.value)}
+          value={customInput}
+          onChange={handleCustomInput}
           placeholder={withV1 ? "https://example.com/v1" : "https://example.com"}
           className="w-full min-w-0 px-2 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
         />

@@ -270,6 +270,13 @@ function flattenTypeArrays(obj) {
   }
 }
 
+// Infer missing type=object when properties exist (Gemini requires explicit type)
+function ensureObjectType(obj) {
+  if (!obj || typeof obj !== "object") return;
+  if (obj.properties && !obj.type) obj.type = "object";
+  for (const v of Object.values(obj)) if (v && typeof v === "object") ensureObjectType(v);
+}
+
 // Clean JSON Schema for Antigravity API compatibility - removes unsupported keywords recursively
 export function cleanJSONSchemaForAntigravity(schema) {
   if (!schema || typeof schema !== "object") return schema;
@@ -285,6 +292,9 @@ export function cleanJSONSchemaForAntigravity(schema) {
   mergeAllOf(cleaned);
   flattenAnyOfOneOf(cleaned);
   flattenTypeArrays(cleaned);
+
+  // Phase 2.5: Infer missing type=object when properties exist (Gemini requirement)
+  ensureObjectType(cleaned);
 
   // Phase 3: Remove all unsupported keywords at ALL levels (including inside arrays)
   removeUnsupportedKeywords(cleaned, UNSUPPORTED_SCHEMA_CONSTRAINTS);

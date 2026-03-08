@@ -6,6 +6,7 @@ import {
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { getDisabledModels } from "@/lib/disabledModelsDb";
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -151,6 +152,14 @@ export async function buildModelsList(kindFilter) {
     console.log("Could not fetch model aliases");
   }
 
+  let disabledByAlias = {};
+  try {
+    disabledByAlias = await getDisabledModels();
+  } catch (e) {
+    console.log("Could not fetch disabled models");
+  }
+  const isDisabled = (alias, modelId) => Array.isArray(disabledByAlias[alias]) && disabledByAlias[alias].includes(modelId);
+
   const activeConnectionByProvider = new Map();
   for (const conn of connections) {
     if (!activeConnectionByProvider.has(conn.provider)) {
@@ -159,7 +168,6 @@ export async function buildModelsList(kindFilter) {
   }
 
   const models = [];
-  const timestamp = Math.floor(Date.now() / 1000);
 
   // Combos first (filtered by kind). Web combos expose `kind` so AI knows search vs fetch.
   for (const combo of combos) {
@@ -167,7 +175,6 @@ export async function buildModelsList(kindFilter) {
     const entry = {
       id: combo.name,
       object: "model",
-      created: timestamp,
       owned_by: "combo",
     };
     if (combo.kind === "webSearch" || combo.kind === "webFetch") {
@@ -186,10 +193,10 @@ export async function buildModelsList(kindFilter) {
       if (!providerMatchesKinds(providerId, kindFilter)) continue;
       for (const model of providerModels) {
         if (!kindFilter.includes(modelKind(model))) continue;
+        if (isDisabled(alias, model.id)) continue;
         models.push({
           id: `${alias}/${model.id}`,
           object: "model",
-          created: timestamp,
           owned_by: alias,
         });
       }
@@ -208,7 +215,6 @@ export async function buildModelsList(kindFilter) {
       models.push({
         id: `${providerAlias}/${modelId}`,
         object: "model",
-        created: timestamp,
         owned_by: providerAlias,
       });
     }
@@ -301,11 +307,11 @@ export async function buildModelsList(kindFilter) {
         // Resolve kind: prefer static metadata, otherwise infer from ID heuristics
         const kind = staticModelKindById.get(modelId) || inferKindFromUnknownModelId(modelId);
         if (!kindFilter.includes(kind)) continue;
+        if (isDisabled(outputAlias, modelId) || isDisabled(staticAlias, modelId)) continue;
 
         models.push({
           id: `${outputAlias}/${modelId}`,
           object: "model",
-          created: timestamp,
           owned_by: outputAlias,
         });
       }
@@ -324,10 +330,10 @@ export async function buildModelsList(kindFilter) {
         }
       }
       for (const subId of subConfigModels) {
+        if (isDisabled(outputAlias, subId) || isDisabled(staticAlias, subId)) continue;
         models.push({
           id: `${outputAlias}/${subId}`,
           object: "model",
-          created: timestamp,
           owned_by: outputAlias,
         });
       }
@@ -338,7 +344,6 @@ export async function buildModelsList(kindFilter) {
           id: `${outputAlias}/search`,
           object: "model",
           kind: "webSearch",
-          created: timestamp,
           owned_by: outputAlias,
         });
       }
@@ -347,7 +352,6 @@ export async function buildModelsList(kindFilter) {
           id: `${outputAlias}/fetch`,
           object: "model",
           kind: "webFetch",
-          created: timestamp,
           owned_by: outputAlias,
         });
       }
