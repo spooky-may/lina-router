@@ -533,12 +533,9 @@ export async function getUsageStats(period = "all") {
     })
     .slice(0, 20);
 
-  const lifetimeTotalRequests = typeof db.data.totalRequestsLifetime === "number"
-    ? db.data.totalRequestsLifetime
-    : history.length;
-
+  // totalRequests: calculated from period-filtered data (not lifetime)
   const stats = {
-    totalRequests: lifetimeTotalRequests,
+    totalRequests: 0,
     totalPromptTokens: 0, totalCompletionTokens: 0, totalCost: 0,
     byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
     last10Minutes: [],
@@ -798,6 +795,9 @@ export async function getUsageStats(period = "all") {
       if (new Date(entry.timestamp) > new Date(epe.lastUsed)) epe.lastUsed = entry.timestamp;
     }
   }
+
+  // Calculate totalRequests from period-filtered data (not lifetime)
+  stats.totalRequests = Object.values(stats.byProvider).reduce((sum, p) => sum + (p.requests || 0), 0);
 
   return stats;
 }
