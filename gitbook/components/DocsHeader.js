@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { DOCS_CONFIG } from "@/constants/docsConfig";
+import { DOCS_CONFIG, t } from "@/constants/docsConfig";
 import { DEFAULT_LANG } from "@/constants/languages";
 import { ExternalLink, Menu, X } from "lucide-react";
 import DocsSidebar from "./DocsSidebar";
@@ -41,7 +41,7 @@ export default function DocsHeader({ lang = DEFAULT_LANG }) {
               rel="noopener noreferrer"
               className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-[#E68A6E] text-white rounded-lg font-medium hover:bg-[#d67a5e] transition-colors text-sm"
             >
-              <span className="hidden sm:inline">Go to App</span>
+              <span className="hidden sm:inline">{t(lang, "goToApp")}</span>
               <ExternalLink className="w-4 h-4" />
             </Link>
           </div>

@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { List } from "lucide-react";
+import { t } from "@/constants/docsConfig";
+import { DEFAULT_LANG } from "@/constants/languages";
 
-export default function DocsToc({ headings }) {
+export default function DocsToc({ headings, lang = DEFAULT_LANG }) {
   const [activeId, setActiveId] = useState("");
 
   useEffect(() => {
@@ -33,7 +35,7 @@ export default function DocsToc({ headings }) {
       <nav className="p-4">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900 mb-3">
           <List className="w-4 h-4" />
-          On this page
+          {t(lang, "onThisPage")}
         </h3>
         <ul className="space-y-2">
           {headings.map((heading, idx) => (

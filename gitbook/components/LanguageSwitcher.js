@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import { Globe, X } from "lucide-react";
 import { LANGUAGES, getLanguage, DEFAULT_LANG } from "@/constants/languages";
+import { t } from "@/constants/docsConfig";
 
 function extractLangFromPath(pathname) {
   const match = pathname.match(/^\/([^/]+)(?:\/(.*))?$/);
@@ -45,7 +46,7 @@ export default function LanguageSwitcher({ currentLang }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <h2 className="font-bold text-lg text-gray-900">Select Language</h2>
+          <h2 className="font-bold text-lg text-gray-900">{t(currentLang, "selectLanguage")}</h2>
           <button
             onClick={() => setOpen(false)}
             className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"

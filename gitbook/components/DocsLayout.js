@@ -17,7 +17,7 @@ export default function DocsLayout({ children, headings = [], lang = DEFAULT_LAN
         
         <div className="flex-1 flex">
           {children}
-          <DocsToc headings={headings} />
+          <DocsToc headings={headings} lang={lang} />
         </div>
       </div>
     </div>

@@ -113,8 +113,9 @@ function renderHeadingWithEmoji(tag, children, props) {
   const text = (Array.isArray(children) ? children : [children])
     .map(c => (typeof c === "string" ? c : ""))
     .join("");
-  const id = slugify(text);
   const emojiMatch = text.match(EMOJI_REGEX);
+  const textForId = emojiMatch ? text.slice(emojiMatch[0].length).trim() : text;
+  const id = slugify(textForId);
   if (emojiMatch) {
     const { Icon, color } = EMOJI_ICON_MAP[emojiMatch[1]];
     const rest = text.slice(emojiMatch[0].length);
@@ -132,7 +133,7 @@ export function MarkdownRenderer({ content }) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeHighlight, rehypeSlug]}
+      rehypePlugins={[rehypeHighlight]}
       className="markdown-content"
       components={{
         h1: ({ node, children, ...props }) => {

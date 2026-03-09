@@ -1,49 +1,58 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { DOCS_CONFIG } from "@/constants/docsConfig";
+import { getNavigation } from "@/constants/docsConfig";
 import { DEFAULT_LANG } from "@/constants/languages";
-import { ChevronDown, ChevronRight, BookOpen, Rocket, Terminal, Monitor, FolderOpen, HelpCircle, MessageCircle, Layers, Plug, Cloud, Zap, Wallet, Gift, GitBranch, BarChart3, Code2, Sparkles, Server, Globe } from "lucide-react";
+import { ChevronDown, ChevronRight, BookOpen, Rocket, Terminal, Monitor, HelpCircle, MessageCircle, Layers, Plug, Cloud, Zap, Wallet, Gift, GitBranch, BarChart3, Code2, Sparkles, Server } from "lucide-react";
 
+// Icons keyed by structural key (language-independent)
 const SECTION_ICONS = {
-  "Getting Started": Rocket,
-  "Providers": Layers,
-  "Features": Zap,
-  "Integration": Plug,
-  "Deployment": Cloud,
-  "Help": HelpCircle
+  gettingStarted: Rocket,
+  providers: Layers,
+  features: Zap,
+  integration: Plug,
+  deployment: Cloud,
+  help: HelpCircle
 };
 
 const ITEM_ICONS = {
-  "Introduction": BookOpen,
-  "Quick Start": Rocket,
-  "Installation": Terminal,
-  "Subscription (Maximize)": Sparkles,
-  "Cheap (Backup)": Wallet,
-  "Free (Fallback)": Gift,
-  "Smart Routing": GitBranch,
-  "Combos & Fallback": Layers,
-  "Quota Tracking": BarChart3,
-  "Claude Code": Code2,
-  "OpenAI Codex": Code2,
-  "Cursor": Code2,
-  "Cline": Code2,
-  "Roo": Code2,
-  "Continue": Code2,
-  "Other Tools": Plug,
-  "Localhost": Monitor,
-  "Cloud (VPS/Docker)": Server,
-  "Troubleshooting": HelpCircle,
-  "FAQ": MessageCircle
+  introduction: BookOpen,
+  quickStart: Rocket,
+  installation: Terminal,
+  subscription: Sparkles,
+  cheap: Wallet,
+  free: Gift,
+  smartRouting: GitBranch,
+  combos: Layers,
+  quotaTracking: BarChart3,
+  claudeCode: Code2,
+  codex: Code2,
+  cursor: Code2,
+  cline: Code2,
+  roo: Code2,
+  continue: Code2,
+  otherTools: Plug,
+  localhost: Monitor,
+  cloud: Server,
+  troubleshooting: HelpCircle,
+  faq: MessageCircle
 };
 
 export default function DocsSidebar({ isMobile = false, onClose, lang = DEFAULT_LANG }) {
   const pathname = usePathname();
-  const [openSections, setOpenSections] = useState(
-    DOCS_CONFIG.navigation.map((_, i) => i)
-  );
+  const navigation = getNavigation(lang);
+  const [openSections, setOpenSections] = useState(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      return JSON.parse(sessionStorage.getItem("sidebarOpen") || "[]");
+    } catch { return []; }
+  });
+
+  useEffect(() => {
+    sessionStorage.setItem("sidebarOpen", JSON.stringify(openSections));
+  }, [openSections]);
 
   const toggleSection = (index) => {
     setOpenSections(prev =>
@@ -53,26 +62,21 @@ export default function DocsSidebar({ isMobile = false, onClose, lang = DEFAULT_
     );
   };
 
-  // Build URL for a navigation slug under current language
   const buildHref = (slug) => (slug ? `/${lang}/${slug}` : `/${lang}`);
-
   const isActive = (slug) => pathname === buildHref(slug);
 
   const handleLinkClick = () => {
-    if (isMobile && onClose) {
-      onClose();
-    }
+    if (isMobile && onClose) onClose();
   };
 
   return (
     <aside className={`${isMobile ? 'w-full' : 'w-64'} border-r bg-white border-gray-200 ${isMobile ? 'h-full' : 'h-[calc(100vh-4rem)] sticky top-16'} overflow-y-auto`}>
       <nav className="p-4 space-y-6">
-        {DOCS_CONFIG.navigation.map((section, sectionIndex) => {
-          const SectionIcon = SECTION_ICONS[section.title] || BookOpen;
-          
+        {navigation.map((section, sectionIndex) => {
+          const SectionIcon = SECTION_ICONS[section.key] || BookOpen;
+
           return (
-            <div key={sectionIndex}>
-              {/* Section title */}
+            <div key={section.key}>
               <button
                 onClick={() => toggleSection(sectionIndex)}
                 className="flex items-center justify-between w-full text-sm font-semibold text-gray-900 mb-2 hover:text-[#E68A6E] transition-colors"
@@ -88,14 +92,13 @@ export default function DocsSidebar({ isMobile = false, onClose, lang = DEFAULT_
                 )}
               </button>
 
-              {/* Section items */}
               {openSections.includes(sectionIndex) && (
                 <ul className="space-y-1">
-                  {section.items.map((item, itemIndex) => {
-                    const ItemIcon = ITEM_ICONS[item.title] || BookOpen;
-                    
+                  {section.items.map((item) => {
+                    const ItemIcon = ITEM_ICONS[item.key] || BookOpen;
+
                     return (
-                      <li key={itemIndex}>
+                      <li key={item.key}>
                         <Link
                           href={buildHref(item.slug)}
                           onClick={handleLinkClick}
