@@ -1,7 +1,19 @@
+import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
+
+const projectRoot = dirname(fileURLToPath(import.meta.url));
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
   serverExternalPackages: ["better-sqlite3", "sql.js", "node:sqlite", "bun:sqlite"],
+  turbopack: {
+    root: projectRoot
+  },
+  outputFileTracingRoot: projectRoot,
+  outputFileTracingExcludes: {
+    "*": ["./gitbook/**/*"]
+  },
   images: {
     unoptimized: true
   },
@@ -15,8 +27,8 @@ const nextConfig = {
         path: false,
       };
     }
-    // Stop watching logs directory to prevent HMR during streaming
-    config.watchOptions = { ...config.watchOptions, ignored: /[\\/](logs|\.next)[\\/]/ };
+    // Exclude logs, .next, gitbook subapp from watcher
+    config.watchOptions = { ...config.watchOptions, ignored: /[\\/](logs|\.next|gitbook)[\\/]/ };
     return config;
   },
   async rewrites() {
