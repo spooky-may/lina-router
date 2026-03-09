@@ -1,3 +1,11 @@
+# v0.4.27 (2026-05-09)
+
+## Features
+- Add 3-tier DB driver fallback: better-sqlite3 → node:sqlite (Node ≥22.5) → sql.js
+
+## Fixes
+- Fix authentication logic for several providers
+
 # v0.4.25 (2026-05-09)
 
 ## Features

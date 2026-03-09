@@ -14,6 +14,19 @@ async function tryBetterSqlite() {
   }
 }
 
+async function tryNodeSqlite() {
+  // Built-in since Node 22.5.0 — no install needed.
+  const [maj, min] = process.versions.node.split(".").map(Number);
+  if (maj < 22 || (maj === 22 && min < 5)) return null;
+  try {
+    const { createNodeSqliteAdapter } = await import("./adapters/nodeSqliteAdapter.js");
+    return await createNodeSqliteAdapter(DATA_FILE);
+  } catch (e) {
+    console.warn(`[DB] node:sqlite unavailable: ${e.message}`);
+    return null;
+  }
+}
+
 async function trySqlJs() {
   try {
     const { createSqlJsAdapter } = await import("./adapters/sqljsAdapter.js");
@@ -26,9 +39,11 @@ async function trySqlJs() {
 
 async function initAdapter() {
   ensureDirs();
+  // Order: native (fastest) → built-in (no install) → pure JS (universal)
   let adapter = await tryBetterSqlite();
+  if (!adapter) adapter = await tryNodeSqlite();
   if (!adapter) adapter = await trySqlJs();
-  if (!adapter) throw new Error("[DB] No SQLite driver available (better-sqlite3 + sql.js both failed)");
+  if (!adapter) throw new Error("[DB] No SQLite driver available (better-sqlite3 + node:sqlite + sql.js all failed)");
 
   if (!state.logged) {
     console.log(`[DB] Driver: ${adapter.driver} | file: ${DATA_FILE}`);

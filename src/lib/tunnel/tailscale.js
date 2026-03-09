@@ -419,18 +419,26 @@ async function ensureUserOwnedDir(dir) {
 /** Start tailscaled in userspace-networking mode (no root, no sudo prompt). */
 export async function startDaemonWithPassword(_sudoPasswordUnused) {
   if (IS_WINDOWS) {
-    // Windows: tailscale runs as a Windows Service, try to start it
-    try {
-      const bin = getTailscaleBin();
-      if (bin) {
-        execSync(`"${bin}" status --json`, { stdio: "ignore", windowsHide: true, timeout: 3000 });
-        return; // Already running
-      }
-    } catch { /* not running */ }
-    try {
-      execSync("net start Tailscale", { stdio: "ignore", windowsHide: true, timeout: 10000 });
-      await new Promise((r) => setTimeout(r, 3000));
-    } catch { /* may need admin, or already running */ }
+    // Windows: tailscale runs as a Windows Service. Start it then poll BackendState
+    // until daemon finishes init (avoids "NoState" errors when calling funnel/up too early).
+    const bin = getTailscaleBin();
+    console.log("[Tailscale] win: net start Tailscale");
+    try { execSync("net start Tailscale", { stdio: "ignore", windowsHide: true, timeout: 10000 }); }
+    catch { /* may need admin, or already running */ }
+    if (!bin) return;
+    // Poll up to ~10s for backend to leave NoState
+    for (let i = 0; i < 20; i++) {
+      try {
+        const out = execSync(`"${bin}" status --json`, { encoding: "utf8", windowsHide: true, timeout: 2000 });
+        const j = JSON.parse(out);
+        if (j.BackendState && j.BackendState !== "NoState") {
+          console.log(`[Tailscale] win: BackendState=${j.BackendState} after ${i*500}ms`);
+          return;
+        }
+      } catch { /* daemon not ready */ }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    console.log("[Tailscale] win: BackendState still NoState after poll");
     return;
   }
 
@@ -486,6 +494,7 @@ export async function startDaemonWithPassword(_sudoPasswordUnused) {
   const child = spawn(tailscaledBin, args, {
     detached: true,
     stdio: "ignore",
+    cwd: os.tmpdir(),
     env: { ...process.env, PATH: EXTENDED_PATH },
   });
   child.unref();
@@ -499,9 +508,24 @@ function ensureDaemon() {
   startDaemonWithPassword("").catch(() => {});
 }
 
+/** Read AuthURL from `tailscale status --json` (Win exposes it there, not stdout). */
+function getAuthUrlFromStatus() {
+  const bin = getTailscaleBin();
+  if (!bin) return null;
+  try {
+    const out = execSync(`"${bin}" ${SOCKET_FLAG.join(" ")} status --json`, {
+      encoding: "utf8", windowsHide: true, timeout: 2000
+    });
+    const j = JSON.parse(out);
+    if (j.AuthURL) return j.AuthURL;
+    return null;
+  } catch { return null; }
+}
+
 /**
  * Run `tailscale up` and capture the auth URL for browser login.
  * Resolves with { authUrl } or { alreadyLoggedIn: true }.
+ * On Windows, AuthURL comes from `status --json` (not stdout) — must poll status.
  */
 export function startLogin(hostname) {
   const bin = getTailscaleBin();
@@ -517,8 +541,8 @@ export function startLogin(hostname) {
       return;
     }
 
-    // Spawn detached so process survives API request lifecycle
-    const args = tsArgs("up", "--accept-routes");
+    // Force re-auth on Win when device may have been removed from tailnet
+    const args = tsArgs("up", "--accept-routes", "--force-reauth");
     if (hostname) args.push(`--hostname=${hostname}`);
     const child = spawn(bin, args, {
       stdio: ["ignore", "pipe", "pipe"],
@@ -529,31 +553,42 @@ export function startLogin(hostname) {
     let resolved = false;
     let output = "";
 
-    const timeout = setTimeout(() => {
-      if (resolved) return;
-      resolved = true;
-      // Don't kill — let tailscale up keep waiting for auth
-      child.unref();
-      const url = parseAuthUrl(output);
-      if (url) resolve({ authUrl: url });
-      else reject(new Error("tailscale up timed out without auth URL"));
-    }, 15000);
-
     const parseAuthUrl = (text) => {
       const match = text.match(/https:\/\/login\.tailscale\.com\/a\/[a-zA-Z0-9]+/);
       return match ? match[0] : null;
     };
 
+    const finishWithUrl = (url, source) => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timeout);
+      clearInterval(statusPoll);
+      console.log(`[Tailscale] login authUrl detected (${source})`);
+      child.unref();
+      resolve({ authUrl: url });
+    };
+
+    // Poll status --json every 500ms — Windows exposes AuthURL only there
+    const statusPoll = setInterval(() => {
+      if (resolved) return;
+      const url = getAuthUrlFromStatus();
+      if (url) finishWithUrl(url, "status");
+    }, 500);
+
+    const timeout = setTimeout(() => {
+      if (resolved) return;
+      resolved = true;
+      clearInterval(statusPoll);
+      child.unref();
+      const url = parseAuthUrl(output) || getAuthUrlFromStatus();
+      if (url) resolve({ authUrl: url });
+      else reject(new Error("tailscale up timed out without auth URL"));
+    }, 15000);
+
     const handleData = (data) => {
       output += data.toString();
       const url = parseAuthUrl(output);
-      if (url && !resolved) {
-        resolved = true;
-        clearTimeout(timeout);
-        // Keep process alive — unref so it doesn't block Node exit
-        child.unref();
-        resolve({ authUrl: url });
-      }
+      if (url) finishWithUrl(url, "stdout");
     };
 
     child.stdout.on("data", handleData);
@@ -563,17 +598,30 @@ export function startLogin(hostname) {
       if (resolved) return;
       resolved = true;
       clearTimeout(timeout);
+      clearInterval(statusPoll);
+      console.error(`[Tailscale] login spawn error: ${err.message}`);
       reject(err);
     });
 
     child.on("exit", (code) => {
       if (resolved) return;
-      resolved = true;
-      clearTimeout(timeout);
-      const url = parseAuthUrl(output);
-      if (url) resolve({ authUrl: url });
-      else if (code === 0 || isTailscaleLoggedIn()) resolve({ alreadyLoggedIn: true });
-      else reject(new Error(`tailscale up exited with code ${code}: ${output.trim() || "no output"}`));
+      console.log(`[Tailscale] login exit code=${code}`);
+      // Don't trust exit code alone — Win `tailscale up` exits 0 even when not logged in.
+      // Let status poll continue until AuthURL appears or timeout.
+      const url = parseAuthUrl(output) || getAuthUrlFromStatus();
+      if (url) {
+        finishWithUrl(url, "exit");
+        return;
+      }
+      // Only resolve alreadyLoggedIn if status confirms BackendState=Running
+      if (isTailscaleLoggedIn()) {
+        resolved = true;
+        clearTimeout(timeout);
+        clearInterval(statusPoll);
+        resolve({ alreadyLoggedIn: true });
+        return;
+      }
+      // Otherwise keep polling — daemon may publish AuthURL shortly after exit
     });
   });
 }
@@ -641,6 +689,7 @@ export async function startFunnel(port) {
       if (resolved) return;
       resolved = true;
       clearTimeout(timeout);
+      console.log(`[Tailscale] funnel exit code=${code} output="${output.trim().slice(0, 200)}"`);
       const url = parseFunnelUrl(output) || getTailscaleFunnelUrl(port);
       if (url) resolve({ tunnelUrl: url });
       else reject(new Error(`tailscale funnel failed (code ${code}): ${output.trim()}`));
