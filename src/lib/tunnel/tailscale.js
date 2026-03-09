@@ -95,8 +95,8 @@ export function isTailscaleLoggedIn() {
       timeout: 5000
     });
     const json = JSON.parse(out);
-    // BackendState "Running" means fully logged in and connected
-    return json.BackendState === "Running";
+    // BackendState=Running + Self.Online=true → device still exists in tailnet
+    return json.BackendState === "Running" && json.Self?.Online === true;
   } catch (e) {
     return false;
   }
@@ -171,6 +171,23 @@ function bgRefreshFunnelUrl(port) {
       funnelUrlCache.fetchedAt = Date.now();
       funnelUrlCache.refreshing = false;
     });
+}
+
+/** Get actual funnel URL from Self.DNSName (sync, authoritative — avoids hostname-conflict suffix). */
+function getActualFunnelUrl() {
+  const bin = getTailscaleBin();
+  if (!bin) return null;
+  try {
+    const out = execSync(`"${bin}" ${SOCKET_FLAG.join(" ")} status --json`, {
+      encoding: "utf8",
+      windowsHide: true,
+      env: { ...process.env, PATH: EXTENDED_PATH },
+      timeout: 5000,
+    });
+    const json = JSON.parse(out);
+    const dnsName = json.Self?.DNSName?.replace(/\.$/, "");
+    return dnsName ? `https://${dnsName}` : null;
+  } catch { return null; }
 }
 
 /** Get funnel URL from tailscale status (cached, non-blocking) */
@@ -646,14 +663,14 @@ export async function startFunnel(port) {
     const timeout = setTimeout(() => {
       if (resolved) return;
       resolved = true;
-      // --bg exits after setup, try status
-      const url = getTailscaleFunnelUrl(port);
+      // --bg exits after setup, read actual hostname from status
+      const url = getActualFunnelUrl() || getTailscaleFunnelUrl(port);
       if (url) resolve({ tunnelUrl: url });
       else reject(new Error(`Tailscale funnel timed out: ${output.trim() || "no output"}`));
     }, 30000);
 
-    const parseFunnelUrl = (text) =>
-      (text.match(/https:\/\/[a-z0-9-]+\.[a-z0-9.-]+\.ts\.net[^\s]*/i) || [])[0]?.replace(/\/$/, "") || null;
+    // Always resolve via Self.DNSName to get the real hostname (avoids -1 suffix from conflicts)
+    const parseFunnelUrl = () => getActualFunnelUrl();
 
     let funnelNotEnabled = false;
 
@@ -674,7 +691,7 @@ export async function startFunnel(port) {
         }
       }
 
-      const url = parseFunnelUrl(output);
+      const url = parseFunnelUrl();
       if (url && !resolved) {
         resolved = true;
         clearTimeout(timeout);
@@ -690,7 +707,7 @@ export async function startFunnel(port) {
       resolved = true;
       clearTimeout(timeout);
       console.log(`[Tailscale] funnel exit code=${code} output="${output.trim().slice(0, 200)}"`);
-      const url = parseFunnelUrl(output) || getTailscaleFunnelUrl(port);
+      const url = parseFunnelUrl() || getTailscaleFunnelUrl(port);
       if (url) resolve({ tunnelUrl: url });
       else reject(new Error(`tailscale funnel failed (code ${code}): ${output.trim()}`));
     });
@@ -702,6 +719,25 @@ export async function startFunnel(port) {
       reject(err);
     });
   });
+}
+
+/** Provision TLS cert for funnel domain (required before Funnel serves HTTPS). Best-effort. */
+export async function provisionCert(hostname) {
+  const bin = getTailscaleBin();
+  if (!bin || !hostname) return;
+  const certsDir = path.join(TAILSCALE_DIR, "certs");
+  fs.mkdirSync(certsDir, { recursive: true });
+  const certFile = path.join(certsDir, `${hostname}.crt`);
+  const keyFile = path.join(certsDir, `${hostname}.key`);
+  try {
+    await execAsync(
+      `"${bin}" ${SOCKET_FLAG.join(" ")} cert --cert-file "${certFile}" --key-file "${keyFile}" "${hostname}"`,
+      { windowsHide: true, env: { ...process.env, PATH: EXTENDED_PATH }, timeout: 30000 }
+    );
+    console.log(`[Tailscale] cert provisioned for ${hostname}`);
+  } catch (e) {
+    console.warn(`[Tailscale] cert provision failed (non-fatal): ${e.message}`);
+  }
 }
 
 /** Stop tailscale funnel */

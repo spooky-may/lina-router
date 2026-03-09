@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { loadState, saveState, generateShortId } from "./state.js";
 import { spawnQuickTunnel, killCloudflared, isCloudflaredRunning, setUnexpectedExitHandler } from "./cloudflared.js";
-import { startFunnel, stopFunnel, isTailscaleRunning, isTailscaleRunningStrict, isTailscaleLoggedIn, startLogin, startDaemonWithPassword } from "./tailscale.js";
+import { startFunnel, stopFunnel, isTailscaleRunning, isTailscaleRunningStrict, isTailscaleLoggedIn, startLogin, startDaemonWithPassword, provisionCert } from "./tailscale.js";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { getCachedPassword, loadEncryptedPassword, initDbHooks } from "@/mitm/manager";
 import { waitForHealth, probeUrlAlive } from "./networkProbe.js";
@@ -250,15 +250,26 @@ export async function enableTailscale(localPort = 20128) {
     await updateSettings({ tailscaleEnabled: true, tailscaleUrl: result.tunnelUrl });
     console.log(`[Tailscale] funnel up: ${result.tunnelUrl}`);
 
-    // Verify funnel actually serves /api/health
-    await waitForHealth(result.tunnelUrl, token);
-    console.log("[Tailscale] enable success");
+    // Provision TLS cert so Funnel can serve HTTPS (non-fatal if fails)
+    const hostname = new URL(result.tunnelUrl).hostname;
+    await provisionCert(hostname);
 
-    // Prime reachable cache so UI shows correct state immediately
-    tailscaleReachable.value = true;
-    tailscaleReachable.url = result.tunnelUrl;
-    tailscaleReachable.fetchedAt = Date.now();
+    // Verify funnel serves /api/health — timeout is non-fatal (DNS may still be propagating)
+    let reachableNow = false;
+    try {
+      await waitForHealth(result.tunnelUrl, token);
+      reachableNow = true;
+    } catch (he) {
+      if (!he.message.startsWith("Health check timeout")) throw he;
+      console.warn(`[Tailscale] health check timed out, will retry via watchdog`);
+    }
 
+    if (reachableNow) {
+      tailscaleReachable.value = true;
+      tailscaleReachable.url = result.tunnelUrl;
+      tailscaleReachable.fetchedAt = Date.now();
+    }
+    console.log(`[Tailscale] enable success (reachable=${reachableNow})`);
     return { success: true, tunnelUrl: result.tunnelUrl };
   } catch (e) {
     console.error(`[Tailscale] enable error: ${e.message}`);
@@ -281,8 +292,9 @@ export async function getTailscaleStatus() {
   const settings = await getSettings();
   const settingsEnabled = settings.tailscaleEnabled === true;
   const tunnelUrl = settings.tailscaleUrl || "";
-  // Lazy: skip execSync funnel-status probe when user disabled Tailscale
-  const running = settingsEnabled ? isTailscaleRunning() : false;
+  // Skip probes entirely when disabled; check login before running (device removed = not logged in)
+  const loggedIn = settingsEnabled ? isTailscaleLoggedIn() : false;
+  const running = loggedIn ? isTailscaleRunning() : false;
   // Reachable: cached background probe (never blocks the request)
   const reachable = settingsEnabled && running ? readReachable(tailscaleReachable, tunnelUrl) : false;
   return {
@@ -290,6 +302,7 @@ export async function getTailscaleStatus() {
     settingsEnabled,
     tunnelUrl,
     running,
+    loggedIn,
     reachable
   };
 }

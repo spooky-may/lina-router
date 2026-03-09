@@ -1,10 +1,10 @@
 {
   "name": "9router-app",
-  "version": "0.4.27",
+  "version": "0.4.28",
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack --hostname 0.0.0.0 --port 20128",
+    "dev": "next dev --webpack --port 20128",
     "build": "NODE_ENV=production next build --webpack",
     "start": "NODE_ENV=production next start",
     "dev:bun": "bun --bun next dev --webpack --port 20128",

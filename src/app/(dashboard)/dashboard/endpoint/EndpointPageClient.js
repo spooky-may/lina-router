@@ -72,6 +72,8 @@ export default function APIPageClient({ machineId }) {
   const [tsLoading, setTsLoading] = useState(false);
   const [tsProgress, setTsProgress] = useState("");
   const [tsStatus, setTsStatus] = useState(null);
+  const [tsAuthUrl, setTsAuthUrl] = useState("");
+  const [tsAuthLabel, setTsAuthLabel] = useState("");
   const [tsInstalled, setTsInstalled] = useState(null); // null=checking, true/false
   const [tsInstalling, setTsInstalling] = useState(false);
   const [tsInstallLog, setTsInstallLog] = useState([]);
@@ -492,12 +494,16 @@ export default function APIPageClient({ machineId }) {
     return false;
   };
 
-  // Open auth URL only when actually needed (avoids blank popup flash on success path).
-  // Falls back to status message with clickable link if popup blocker prevents opening.
-  const openAuthUrl = (url) => {
-    const w = window.open(url, "tailscale_auth", "width=600,height=700");
-    if (!w) setTsStatus({ type: "warning", message: `Popup blocked. Open manually: ${url}` });
-    return w;
+  // Show inline login button instead of auto-opening popup (browsers block popups
+  // opened after async work because the user gesture is lost).
+  const requestUserAuth = (url, label) => {
+    setTsAuthUrl(url);
+    setTsAuthLabel(label);
+  };
+
+  const clearUserAuth = () => {
+    setTsAuthUrl("");
+    setTsAuthLabel("");
   };
 
   const handleConnectTailscale = async () => {
@@ -506,6 +512,7 @@ export default function APIPageClient({ machineId }) {
     setTsLoading(true);
     setTsStatus(null);
     setTsProgress("Connecting...");
+    clearUserAuth();
     try {
       const res = await fetch("/api/tunnel/tailscale-enable", { method: "POST" });
       const data = await res.json();
@@ -519,8 +526,8 @@ export default function APIPageClient({ machineId }) {
       }
 
       if (data.needsLogin && data.authUrl) {
-        openAuthUrl(data.authUrl);
-        setTsProgress("Waiting for login...");
+        requestUserAuth(data.authUrl, "Open Login Page");
+        setTsProgress("Login required — click \"Open Login Page\" to continue");
         for (let i = 0; i < 40; i++) {
           await new Promise((r) => setTimeout(r, 3000));
           try {
@@ -528,6 +535,7 @@ export default function APIPageClient({ machineId }) {
             if (r2.ok) {
               const check = await r2.json();
               if (check.loggedIn) {
+                clearUserAuth();
                 setTsProgress("Starting funnel...");
                 const res2 = await fetch("/api/tunnel/tailscale-enable", { method: "POST" });
                 const data2 = await res2.json();
@@ -546,6 +554,7 @@ export default function APIPageClient({ machineId }) {
             }
           } catch { /* retry */ }
         }
+        clearUserAuth();
         setTsStatus({ type: "error", message: "Login timed out. Please try again." });
         return;
       }
@@ -562,18 +571,20 @@ export default function APIPageClient({ machineId }) {
       setTsLoading(false);
       setTsConnecting(false);
       setTsProgress("");
+      clearUserAuth();
     }
   };
 
   const pollFunnelEnable = async (enableUrl) => {
-    openAuthUrl(enableUrl);
-    setTsProgress("Enable Funnel in browser, waiting...");
+    requestUserAuth(enableUrl, "Open Funnel Settings");
+    setTsProgress("Click \"Open Funnel Settings\" to enable Funnel...");
     for (let i = 0; i < 40; i++) {
       await new Promise((r) => setTimeout(r, 3000));
       try {
         const res = await fetch("/api/tunnel/tailscale-enable", { method: "POST" });
         const data = await res.json();
         if (res.ok && data.success) {
+          clearUserAuth();
           setTsUrl(data.tunnelUrl || "");
           const ok3 = await pingTsHealth(data.tunnelUrl);
           setTsEnabled(true);
@@ -582,11 +593,13 @@ export default function APIPageClient({ machineId }) {
         }
         if (data.funnelNotEnabled) continue;
         if (data.error) {
+          clearUserAuth();
           setTsStatus({ type: "error", message: data.error });
           return;
         }
       } catch { /* retry */ }
     }
+    clearUserAuth();
     setTsStatus({ type: "error", message: "Timed out waiting for Funnel to be enabled." });
   };
 
@@ -614,8 +627,13 @@ export default function APIPageClient({ machineId }) {
   const handleOpenTsModal = async () => {
     setTsStatus(null);
     setTsInstallLog([]);
-    setShowTsModal(true);
-    await checkTailscaleInstalled();
+    const data = await checkTailscaleInstalled();
+    if (data?.installed) {
+      // Skip modal, connect directly when already installed
+      handleConnectTailscale();
+    } else {
+      setShowTsModal(true);
+    }
   };
 
   const handleCreateKey = async () => {
@@ -857,8 +875,17 @@ export default function APIPageClient({ machineId }) {
                   <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
                   {tsProgress || "Connecting..."}
                 </div>
+                {tsAuthUrl && (
+                  <Button
+                    size="sm"
+                    icon="open_in_new"
+                    onClick={() => window.open(tsAuthUrl, "tailscale_auth", "width=600,height=700,noopener,noreferrer")}
+                  >
+                    {tsAuthLabel || "Open"}
+                  </Button>
+                )}
                 <button
-                  onClick={() => { setTsLoading(false); setTsConnecting(false); setTsProgress(""); }}
+                  onClick={() => { setTsLoading(false); setTsConnecting(false); setTsProgress(""); clearUserAuth(); }}
                   className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
                   title="Stop"
                 >
