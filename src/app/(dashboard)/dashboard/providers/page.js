@@ -120,12 +120,25 @@ export default function ProvidersPage() {
     !searchQuery.trim() ||
     name.toLowerCase().includes(searchQuery.trim().toLowerCase());
 
-  const sortByConnections = (entries, authType) =>
-    [...entries].sort(
-      (a, b) =>
-        getProviderStats(b[0], authType).total -
-        getProviderStats(a[0], authType).total,
-    );
+  const sortByPriority = (entries, authType) =>
+    [...entries].sort(([ka, a], [kb, b]) => {
+      const sa = getProviderStats(ka, authType);
+      const sb = getProviderStats(kb, authType);
+      const ca = sa.connected > 0 ? 1 : 0;
+      const cb = sb.connected > 0 ? 1 : 0;
+      if (ca !== cb) return cb - ca;
+      return (a.name || "").localeCompare(b.name || "");
+    });
+
+  const sortItemsByPriority = (items, authType) =>
+    [...items].sort((a, b) => {
+      const sa = getProviderStats(a.id, authType);
+      const sb = getProviderStats(b.id, authType);
+      const ca = sa.connected > 0 ? 1 : 0;
+      const cb = sb.connected > 0 ? 1 : 0;
+      if (ca !== cb) return cb - ca;
+      return (a.name || "").localeCompare(b.name || "");
+    });
 
   useEffect(() => {
     const fetchData = async () => {
@@ -239,37 +252,48 @@ export default function ProvidersPage() {
     }
   };
 
-  const compatibleProviders = providerNodes
-    .filter((node) => node.type === "openai-compatible")
-    .map((node) => ({
-      id: node.id,
-      name: node.name || "OpenAI Compatible",
-      color: "#10A37F",
-      textIcon: "OC",
-      apiType: node.apiType,
-    }))
-    .filter((p) => matchSearch(p.name));
+  const compatibleProviders = sortItemsByPriority(
+    providerNodes
+      .filter((node) => node.type === "openai-compatible")
+      .map((node) => ({
+        id: node.id,
+        name: node.name || "OpenAI Compatible",
+        color: "#10A37F",
+        textIcon: "OC",
+        apiType: node.apiType,
+      }))
+      .filter((p) => matchSearch(p.name)),
+    "apikey",
+  );
 
-  const anthropicCompatibleProviders = providerNodes
-    .filter((node) => node.type === "anthropic-compatible")
-    .map((node) => ({
-      id: node.id,
-      name: node.name || "Anthropic Compatible",
-      color: "#D97757",
-      textIcon: "AC",
-    }))
-    .filter((p) => matchSearch(p.name));
+  const anthropicCompatibleProviders = sortItemsByPriority(
+    providerNodes
+      .filter((node) => node.type === "anthropic-compatible")
+      .map((node) => ({
+        id: node.id,
+        name: node.name || "Anthropic Compatible",
+        color: "#D97757",
+        textIcon: "AC",
+      }))
+      .filter((p) => matchSearch(p.name)),
+    "apikey",
+  );
 
-  const oauthEntries = Object.entries(OAUTH_PROVIDERS).filter(([, info]) =>
-    matchSearch(info.name),
+  const oauthEntries = sortByPriority(
+    Object.entries(OAUTH_PROVIDERS).filter(([, info]) => matchSearch(info.name)),
+    "oauth",
   );
-  const freeEntries = Object.entries(FREE_PROVIDERS).filter(([, info]) =>
-    matchSearch(info.name),
+  const freeEntries = sortByPriority(
+    Object.entries(FREE_PROVIDERS).filter(([, info]) => matchSearch(info.name)),
+    "oauth",
   );
-  const freeTierEntries = Object.entries(FREE_TIER_PROVIDERS).filter(
-    ([, info]) => matchSearch(info.name),
+  const freeTierEntries = sortByPriority(
+    Object.entries(FREE_TIER_PROVIDERS).filter(([, info]) =>
+      matchSearch(info.name),
+    ),
+    "apikey",
   );
-  const apikeyEntries = sortByConnections(
+  const apikeyEntries = sortByPriority(
     Object.entries(APIKEY_PROVIDERS).filter(
       ([, info]) =>
         (info.serviceKinds ?? ["llm"]).includes("llm") && matchSearch(info.name),

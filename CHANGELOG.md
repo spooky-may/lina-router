@@ -1,3 +1,22 @@
+# v0.4.30 (2026-05-11)
+
+## Features
+- MCP stdio→SSE bridge: expose local stdio MCP plugins over SSE (api/mcp/[plugin]/sse, /message)
+- Dynamic Linux cert resolution + NSS DB injection (Debian/Arch/Fedora/openSUSE, Chrome/Chromium/Firefox incl. snap) (#1010)
+- Cowork tool: expanded settings UI & API
+- GitBook docs (DocsContent, DocsLayout)
+
+## Fixes
+- OAuth callback postMessage scoped to expected origins (CWE-1385) (#998)
+- Re-enable TLS verification on DNS-bypass fetch (CWE-295) (#998)
+- Normalize `developer` role → `system` for OpenAI-format providers (Deepseek, Groq, …) (#1011, closes #773)
+- Respect `PORT` env in internal model-test fetch (#1014)
+- Dropdown text readability in dark theme on usage page (#997)
+
+## Improvements
+- Refactor Claude CLI spoof headers into shared constant
+- Tool deduper utility in open-sse handlers
+
 # v0.4.29 (2026-05-10)
 
 ## Features
