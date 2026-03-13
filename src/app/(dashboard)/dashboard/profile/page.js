@@ -28,6 +28,7 @@ export default function ProfilePage() {
   const [oidcTestLoading, setOidcTestLoading] = useState(false);
   const [oidcTestStatus, setOidcTestStatus] = useState({ type: "", message: "" });
   const [oidcRedirectUri, setOidcRedirectUri] = useState("/api/auth/oidc/callback");
+  const [oidcExpanded, setOidcExpanded] = useState(false);
   const importFileRef = useRef(null);
   const [proxyForm, setProxyForm] = useState({
     outboundProxyEnabled: false,
@@ -51,6 +52,7 @@ export default function ProfilePage() {
           oidcLoginLabel: data?.oidcLoginLabel || "Sign in with OIDC",
         });
         setOidcClientSecret("");
+        if (data?.authMode === "oidc" || data?.authMode === "both") setOidcExpanded(true);
         setProxyForm({
           outboundProxyEnabled: data?.outboundProxyEnabled === true,
           outboundProxyUrl: data?.outboundProxyUrl || "",
@@ -675,13 +677,26 @@ export default function ProfilePage() {
 
         {/* OIDC */}
         <Card>
-          <div className="flex items-center gap-3 mb-4">
+          <button
+            type="button"
+            onClick={() => setOidcExpanded((v) => !v)}
+            className="w-full flex items-center gap-3 text-left"
+          >
             <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-500 shrink-0">
               <span className="material-symbols-outlined text-[20px]">lock_open</span>
             </div>
-            <h3 className="text-base sm:text-lg font-semibold">OIDC Dashboard Login</h3>
-          </div>
-          <div className="flex flex-col gap-4">
+            <div className="flex-1 min-w-0">
+              <h3 className="text-base sm:text-lg font-semibold">OIDC Dashboard Login</h3>
+              <p className="text-xs text-text-muted">
+                {settings.authMode === "oidc" ? "OIDC active" : settings.authMode === "both" ? "Password + OIDC active" : "Optional SSO via Authentik/Keycloak/Google"}
+              </p>
+            </div>
+            <span className="material-symbols-outlined text-text-muted shrink-0">
+              {oidcExpanded ? "expand_less" : "expand_more"}
+            </span>
+          </button>
+          {oidcExpanded && (
+          <div className="flex flex-col gap-4 mt-4">
             <p className="text-xs sm:text-sm text-text-muted">
               Use Authentik or any OIDC provider to sign in to the dashboard. You can enable password-only, OIDC-only, or both for the dashboard; model API access still uses API keys.
             </p>
@@ -820,6 +835,7 @@ export default function ProfilePage() {
               </p>
             )}
           </div>
+          )}
         </Card>
 
         {/* Routing Preferences */}

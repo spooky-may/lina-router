@@ -252,46 +252,35 @@ export default function ProvidersPage() {
     }
   };
 
-  const compatibleProviders = sortItemsByPriority(
-    providerNodes
-      .filter((node) => node.type === "openai-compatible")
-      .map((node) => ({
-        id: node.id,
-        name: node.name || "OpenAI Compatible",
-        color: "#10A37F",
-        textIcon: "OC",
-        apiType: node.apiType,
-      }))
-      .filter((p) => matchSearch(p.name)),
-    "apikey",
-  );
+  const compatibleProviders = providerNodes
+    .filter((node) => node.type === "openai-compatible")
+    .map((node) => ({
+      id: node.id,
+      name: node.name || "OpenAI Compatible",
+      color: "#10A37F",
+      textIcon: "OC",
+      apiType: node.apiType,
+    }))
+    .filter((p) => matchSearch(p.name));
 
-  const anthropicCompatibleProviders = sortItemsByPriority(
-    providerNodes
-      .filter((node) => node.type === "anthropic-compatible")
-      .map((node) => ({
-        id: node.id,
-        name: node.name || "Anthropic Compatible",
-        color: "#D97757",
-        textIcon: "AC",
-      }))
-      .filter((p) => matchSearch(p.name)),
-    "apikey",
-  );
+  const anthropicCompatibleProviders = providerNodes
+    .filter((node) => node.type === "anthropic-compatible")
+    .map((node) => ({
+      id: node.id,
+      name: node.name || "Anthropic Compatible",
+      color: "#D97757",
+      textIcon: "AC",
+    }))
+    .filter((p) => matchSearch(p.name));
 
-  const oauthEntries = sortByPriority(
-    Object.entries(OAUTH_PROVIDERS).filter(([, info]) => matchSearch(info.name)),
-    "oauth",
+  const oauthEntries = Object.entries(OAUTH_PROVIDERS).filter(([, info]) =>
+    matchSearch(info.name),
   );
-  const freeEntries = sortByPriority(
-    Object.entries(FREE_PROVIDERS).filter(([, info]) => matchSearch(info.name)),
-    "oauth",
+  const freeEntries = Object.entries(FREE_PROVIDERS).filter(([, info]) =>
+    matchSearch(info.name),
   );
-  const freeTierEntries = sortByPriority(
-    Object.entries(FREE_TIER_PROVIDERS).filter(([, info]) =>
-      matchSearch(info.name),
-    ),
-    "apikey",
+  const freeTierEntries = Object.entries(FREE_TIER_PROVIDERS).filter(
+    ([, info]) => matchSearch(info.name),
   );
   const apikeyEntries = sortByPriority(
     Object.entries(APIKEY_PROVIDERS).filter(
