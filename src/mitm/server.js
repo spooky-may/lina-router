@@ -1,4 +1,4 @@
-const https = require("https");
+﻿const https = require("https");
 const fs = require("fs");
 const path = require("path");
 const dns = require("dns");
@@ -185,7 +185,7 @@ const server = https.createServer(sslOptions, async (req, res) => {
     const bodyBuffer = await collectBodyRaw(req);
     if (ENABLE_FILE_LOG) dumpRequest(req, bodyBuffer, "raw");
 
-    // Anti-loop: skip requests from 9Router
+    // Anti-loop: skip requests from LINA Router
     if (req.headers[INTERNAL_REQUEST_HEADER.name] === INTERNAL_REQUEST_HEADER.value) {
       return passthrough(req, res, bodyBuffer);
     }

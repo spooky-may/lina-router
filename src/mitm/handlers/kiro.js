@@ -1,4 +1,4 @@
-const { err } = require("../logger");
+﻿const { err } = require("../logger");
 const { fetchRouter } = require("./base");
 const fs = require("fs");
 const path = require("path");
@@ -92,7 +92,7 @@ function buildEventStreamFrame(eventType, payload) {
 /**
  * Safely stringify a tool-call input value.
  * OpenAI expects `function.arguments` to be a JSON string, never an object.
- * If 9router's Anthropic→OpenAI conversion passes the input as a pre-parsed object,
+ * If LINA Router's Anthropic→OpenAI conversion passes the input as a pre-parsed object,
  * this prevents the "" + object → "[object Object]" corruption.
  */
 function safeArgsString(value) {
@@ -232,7 +232,7 @@ function extractTools(body) {
 
 // ─── OpenAI SSE → EventStream binary conversion ───────────────────────────────
 /**
- * Read 9router's OpenAI SSE response and re-encode it as AWS EventStream binary
+ * Read LINA Router's OpenAI SSE response and re-encode it as AWS EventStream binary
  * frames that Kiro's Smithy SDK expects.
  *
  * OpenAI SSE format:  data: { choices:[{ delta:{ content:"..." } }] }\n\n
@@ -306,7 +306,7 @@ async function pipeOpenAIasEventStream(routerRes, res) {
             if (tc.id) acc.id = tc.id;
             if (tc.function?.name) acc.name += tc.function.name;
             // safeArgsString prevents `"" + object` → "[object Object]" corruption
-            // when 9router's Anthropic→OpenAI conversion passes a pre-parsed object
+            // when LINA Router's Anthropic→OpenAI conversion passes a pre-parsed object
             const argType = typeof tc.function?.arguments;
             if (tc.function?.arguments != null) {
               acc.args += safeArgsString(tc.function.arguments);
@@ -351,7 +351,7 @@ async function pipeOpenAIasEventStream(routerRes, res) {
  * Intercept Kiro IDE CodeWhisperer request:
  *   1. Parse CodeWhisperer binary/JSON body
  *   2. Convert to OpenAI messages[] format
- *   3. Forward to 9router /v1/chat/completions (OpenAI SSE)
+ *   3. Forward to LINA Router /v1/chat/completions (OpenAI SSE)
  *   4. Convert OpenAI SSE response → AWS EventStream binary frames
  *   5. Stream binary frames back to Kiro
  */
@@ -375,7 +375,7 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
       ...(tools.length > 0 && { tools, tool_choice: "auto" }),
     };
 
-    // 3: Forward to 9router
+    // 3: Forward to LINA Router
     const routerRes = await fetchRouter(openaiBody, "/v1/chat/completions", req.headers);
 
     // 4 + 5: Re-encode response as AWS EventStream binary

@@ -1,4 +1,4 @@
-const { exec, spawn, execSync } = require("child_process");
+﻿const { exec, spawn, execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
@@ -12,8 +12,8 @@ const { runElevatedPowerShell, isAdmin } = require("../winElevated.js");
  * If anything fails mid-way, restore from `.bak`. Same-volume renames are atomic on NTFS.
  */
 function atomicWriteHostsWin(target, originalContent, newContent) {
-  const tmpNew = `${target}.9router.new`;
-  const tmpBak = `${target}.9router.bak`;
+  const tmpNew = `${target}.LINA Router.new`;
+  const tmpBak = `${target}.LINA Router.bak`;
   try {
     fs.writeFileSync(tmpNew, newContent, "utf8");
     try { fs.unlinkSync(tmpBak); } catch { /* none */ }
