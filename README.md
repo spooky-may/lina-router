@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./images/9router.png?1" alt="9Router Dashboard" width="800"/>
+  <img src="./images/lina-router.png?1" alt="9Router Dashboard" width="800"/>
   
   # 9Router - FREE AI Router & Token Saver
   
@@ -7,13 +7,13 @@
   
   **Connect All AI Code Tools (Claude Code, Cursor, Antigravity, Copilot, Codex, Gemini, OpenCode, Cline, OpenClaw...) to 40+ AI Providers & 100+ Models.**
   
-  [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
-  [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-  [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
+  [![npm](https://img.shields.io/npm/v/lina-router.svg)](https://www.npmjs.com/package/lina-router)
+  [![Downloads](https://img.shields.io/npm/dm/lina-router.svg)](https://www.npmjs.com/package/lina-router)
+  [![License](https://img.shields.io/npm/l/lina-router.svg)](https://github.com/decolua/lina-router/blob/main/LICENSE)
 
-  <a href="https://trendshift.io/repositories/22628" target="_blank"><img src="https://trendshift.io/api/badge/repositories/22628" alt="decolua%2F9router | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+  <a href="https://trendshift.io/repositories/22628" target="_blank"><img src="https://trendshift.io/api/badge/repositories/22628" alt="decolua%2Flina-router | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
   
-  [🚀 Quick Start](#-quick-start) • [💡 Features](#-key-features) • [📖 Setup](#-setup-guide) • [🌐 Website](https://9router.com)
+  [🚀 Quick Start](#-quick-start) • [💡 Features](#-key-features) • [📖 Setup](#-setup-guide) • [🌐 Website](https://lina-router.com)
 
   [🇻🇳 Tiếng Việt](./i18n/README.vi.md) • [🇨🇳 中文](./i18n/README.zh-CN.md) • [🇯🇵 日本語](./i18n/README.ja-JP.md)
 </div>
@@ -73,8 +73,8 @@ Result: Never stop coding, minimal cost + 20-40% token savings via RTK
 **1. Install globally:**
 
 ```bash
-npm install -g 9router
-9router
+npm install -g lina-router
+lina-router
 ```
 
 🎉 Dashboard opens at `http://localhost:20128`
@@ -96,7 +96,7 @@ Claude Code/Codex/OpenClaw/Cursor/Cline Settings:
 
 **Alternative: run from source (this repository):**
 
-This repository package is private (`9router-app`), so source/Docker execution is the expected local development path.
+This repository package is private (`lina-router-app`), so source/Docker execution is the expected local development path.
 
 ```bash
 cp .env.example .env
@@ -172,7 +172,7 @@ Default URLs:
 
 </div>
 
-> 🎬 **Made a video about 9Router?** Submit a [Pull Request](https://github.com/decolua/9router/pulls) adding your video to this section — we'll merge it!
+> 🎬 **Made a video about 9Router?** Submit a [Pull Request](https://github.com/decolua/lina-router/pulls) adding your video to this section — we'll merge it!
 
 ---
 
@@ -936,7 +936,7 @@ Cost: $0 forever (+ 20-40% token savings via RTK)!
 ```
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
-  OpenAI API Key: [from 9router dashboard]
+  OpenAI API Key: [from lina-router dashboard]
   Model: cc/claude-opus-4-7
 ```
 
@@ -949,7 +949,7 @@ Edit `~/.claude/config.json`:
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
-  "anthropic_api_key": "your-9router-api-key"
+  "anthropic_api_key": "your-lina-router-api-key"
 }
 ```
 
@@ -957,7 +957,7 @@ Edit `~/.claude/config.json`:
 
 ```bash
 export OPENAI_BASE_URL="http://localhost:20128"
-export OPENAI_API_KEY="your-9router-api-key"
+export OPENAI_API_KEY="your-lina-router-api-key"
 
 codex "your prompt"
 ```
@@ -977,15 +977,15 @@ Dashboard → CLI Tools → OpenClaw → Select Model → Apply
   "agents": {
     "defaults": {
       "model": {
-        "primary": "9router/kr/claude-sonnet-4.5"
+        "primary": "lina-router/kr/claude-sonnet-4.5"
       }
     }
   },
   "models": {
     "providers": {
-      "9router": {
+      "lina-router": {
         "baseUrl": "http://127.0.0.1:20128/v1",
-        "apiKey": "sk_9router",
+        "apiKey": "sk_lina-router",
         "api": "openai-completions",
         "models": [
           {
@@ -1019,20 +1019,20 @@ Model: cc/claude-opus-4-7
 
 ```bash
 # Clone and install
-git clone https://github.com/decolua/9router.git
-cd 9router
+git clone https://github.com/decolua/lina-router.git
+cd lina-router
 npm install
 npm run build
 
 # Configure
 export JWT_SECRET="your-secure-secret-change-this"
 export INITIAL_PASSWORD="your-password"
-export DATA_DIR="/var/lib/9router"
+export DATA_DIR="/var/lib/lina-router"
 export PORT="20128"
 export HOSTNAME="0.0.0.0"
 export NODE_ENV="production"
 export NEXT_PUBLIC_BASE_URL="http://localhost:20128"
-export NEXT_PUBLIC_CLOUD_URL="https://9router.com"
+export NEXT_PUBLIC_CLOUD_URL="https://lina-router.com"
 export API_KEY_SECRET="endpoint-proxy-api-key-secret"
 export MACHINE_ID_SALT="endpoint-proxy-salt"
 
@@ -1041,7 +1041,7 @@ npm run start
 
 # Or use PM2
 npm install -g pm2
-pm2 start npm --name 9router -- start
+pm2 start npm --name lina-router -- start
 pm2 save
 pm2 startup
 ```
@@ -1050,28 +1050,28 @@ pm2 startup
 
 ```bash
 # Build image (from repository root)
-docker build -t 9router .
+docker build -t lina-router .
 
 # Run container (command used in current setup)
 docker run -d \
-  --name 9router \
+  --name lina-router \
   -p 20128:20128 \
-  --env-file /root/dev/9router/.env \
-  -v 9router-data:/app/data \
-  -v 9router-usage:/root/.9router \
-  9router
+  --env-file /root/dev/lina-router/.env \
+  -v lina-router-data:/app/data \
+  -v lina-router-usage:/root/.lina-router \
+  lina-router
 ```
 
 Portable command (if you are already at repository root):
 
 ```bash
 docker run -d \
-  --name 9router \
+  --name lina-router \
   -p 20128:20128 \
   --env-file ./.env \
-  -v 9router-data:/app/data \
-  -v 9router-usage:/root/.9router \
-  9router
+  -v lina-router-data:/app/data \
+  -v lina-router-usage:/root/.lina-router \
+  lina-router
 ```
 
 Container defaults:
@@ -1081,25 +1081,25 @@ Container defaults:
 Useful commands:
 
 ```bash
-docker logs -f 9router
-docker restart 9router
-docker stop 9router && docker rm 9router
+docker logs -f lina-router
+docker restart lina-router
+docker stop lina-router && docker rm lina-router
 ```
 
 ### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `JWT_SECRET` | `9router-default-secret-change-me` | JWT signing secret for dashboard auth cookie (**change in production**) |
+| `JWT_SECRET` | `lina-router-default-secret-change-me` | JWT signing secret for dashboard auth cookie (**change in production**) |
 | `INITIAL_PASSWORD` | `123456` | First login password when no saved hash exists |
-| `DATA_DIR` | `~/.9router` | Main app database location (`db.json`) |
+| `DATA_DIR` | `~/.lina-router` | Main app database location (`db.json`) |
 | `PORT` | framework default | Service port (`20128` in examples) |
 | `HOSTNAME` | framework default | Bind host (Docker defaults to `0.0.0.0`) |
 | `NODE_ENV` | runtime default | Set `production` for deploy |
 | `BASE_URL` | `http://localhost:20128` | Server-side internal base URL used by cloud sync jobs |
-| `CLOUD_URL` | `https://9router.com` | Server-side cloud sync endpoint base URL |
+| `CLOUD_URL` | `https://lina-router.com` | Server-side cloud sync endpoint base URL |
 | `NEXT_PUBLIC_BASE_URL` | `http://localhost:3000` | Backward-compatible/public base URL (prefer `BASE_URL` for server runtime) |
-| `NEXT_PUBLIC_CLOUD_URL` | `https://9router.com` | Backward-compatible/public cloud URL (prefer `CLOUD_URL` for server runtime) |
+| `NEXT_PUBLIC_CLOUD_URL` | `https://lina-router.com` | Backward-compatible/public cloud URL (prefer `CLOUD_URL` for server runtime) |
 | `API_KEY_SECRET` | `endpoint-proxy-api-key-secret` | HMAC secret for generated API keys |
 | `MACHINE_ID_SALT` | `endpoint-proxy-salt` | Salt for stable machine ID hashing |
 | `ENABLE_REQUEST_LOGS` | `false` | Enables request/response logs under `logs/` |
@@ -1118,7 +1118,7 @@ Notes:
 - Main app state: `${DATA_DIR}/db.json` (providers, combos, aliases, keys, settings), managed by `src/lib/localDb.js`.
 - Usage history and logs: `${DATA_DIR}/usage.json` and `${DATA_DIR}/log.txt`, managed by `src/lib/usageDb.js`.
 - Optional request/translator logs: `<repo>/logs/...` when `ENABLE_REQUEST_LOGS=true`.
-- Both `${DATA_DIR}` and `~/.9router` resolve to the same location in a Docker container — the symlink `/root/.9router -> /app/data` is created at build time.
+- Both `${DATA_DIR}` and `~/.lina-router` resolve to the same location in a Docker container — the symlink `/root/.lina-router -> /app/data` is created at build time.
 
 </details>
 
@@ -1263,9 +1263,9 @@ Authorization: Bearer your-api-key
 
 ## 📧 Support
 
-- **Website**: [9router.com](https://9router.com)
-- **GitHub**: [github.com/decolua/9router](https://github.com/decolua/9router)
-- **Issues**: [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **Website**: [lina-router.com](https://lina-router.com)
+- **GitHub**: [github.com/decolua/lina-router](https://github.com/decolua/lina-router)
+- **Issues**: [github.com/decolua/lina-router/issues](https://github.com/decolua/lina-router/issues)
 
 ---
 
@@ -1273,13 +1273,13 @@ Authorization: Bearer your-api-key
 
 Thanks to all contributors who helped make 9Router better!
 
-[![Contributors](https://contrib.rocks/image?repo=decolua/9router&max=150&columns=15&anon=1&v=20260309)](https://github.com/decolua/9router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=decolua/lina-router&max=150&columns=15&anon=1&v=20260309)](https://github.com/decolua/lina-router/graphs/contributors)
 
 ---
 
 ## 📊 Star Chart
 
-[![Star Chart](https://starchart.cc/decolua/9router.svg?variant=adaptive)](https://starchart.cc/decolua/9router)
+[![Star Chart](https://starchart.cc/decolua/lina-router.svg?variant=adaptive)](https://starchart.cc/decolua/lina-router)
 
 
 

@@ -5,7 +5,7 @@ This project ships with a `Dockerfile` for building and running 9Router in a con
 ## Build image
 
 ```bash
-docker build -t 9router .
+docker build -t lina-router .
 ```
 
 ## Start container
@@ -13,10 +13,10 @@ docker build -t 9router .
 ```bash
 docker run --rm \
   -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" \
+  -v "$HOME/.lina-router:/app/data" \
   -e DATA_DIR=/app/data \
-  --name 9router \
-  9router
+  --name lina-router \
+  lina-router
 ```
 
 The app listens on port `20128` in the container.
@@ -24,12 +24,12 @@ The app listens on port `20128` in the container.
 ## What the volume does
 
 ```bash
--v "$HOME/.9router:/app/data" \
+-v "$HOME/.lina-router:/app/data" \
 -e DATA_DIR=/app/data
 ```
 
-`9router` stores its database at `path.join(DATA_DIR, "db.json")`.
-Without `DATA_DIR`, the app falls back to the current user's home directory (for example `~/.9router/db.json` on macOS/Linux). In the container, set `DATA_DIR=/app/data` so the bind mount is actually used.
+`lina-router` stores its database at `path.join(DATA_DIR, "db.json")`.
+Without `DATA_DIR`, the app falls back to the current user's home directory (for example `~/.lina-router/db.json` on macOS/Linux). In the container, set `DATA_DIR=/app/data` so the bind mount is actually used.
 
 With the example above, the database file is:
 
@@ -40,13 +40,13 @@ With the example above, the database file is:
 and it is persisted on the host at:
 
 ```text
-$HOME/.9router/db.json
+$HOME/.lina-router/db.json
 ```
 
 ## Stop container
 
 ```bash
-docker stop 9router
+docker stop lina-router
 ```
 
 ## Run in background
@@ -54,16 +54,16 @@ docker stop 9router
 ```bash
 docker run -d \
   -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" \
+  -v "$HOME/.lina-router:/app/data" \
   -e DATA_DIR=/app/data \
-  --name 9router \
-  9router
+  --name lina-router \
+  lina-router
 ```
 
 ## View logs
 
 ```bash
-docker logs -f 9router
+docker logs -f lina-router
 ```
 
 ## Optional environment variables
@@ -75,19 +75,19 @@ Example:
 ```bash
 docker run --rm \
   -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" \
+  -v "$HOME/.lina-router:/app/data" \
   -e DATA_DIR=/app/data \
   -e PORT=20128 \
   -e HOSTNAME=0.0.0.0 \
   -e DEBUG=true \
-  --name 9router \
-  9router
+  --name lina-router \
+  lina-router
 ```
 
 ## Rebuild after code changes
 
 ```bash
-docker build -t 9router .
+docker build -t lina-router .
 ```
 
 Then restart the container.
