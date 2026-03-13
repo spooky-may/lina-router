@@ -1,4 +1,4 @@
-// Inline stdio<->SSE bridge for MCP. Spawns one child per plugin on demand,
+﻿// Inline stdio<->SSE bridge for MCP. Spawns one child per plugin on demand,
 // broadcasts JSON-RPC frames over SSE, accepts client messages via HTTP POST.
 
 const { spawn } = require("child_process");
@@ -10,7 +10,7 @@ const { DATA_DIR } = require("@/lib/dataDir");
 
 const CUSTOM_FILE = path.join(DATA_DIR, "mcp", "customPlugins.json");
 
-const G_KEY = "__9routerMcpBridges";
+const G_KEY = "__LinaRouterMcpBridges";
 const MAX_TEXT_CHARS = 50000;
 const COLLAPSE_THRESHOLD = 30;
 const COLLAPSE_KEEP_HEAD = 10;
@@ -25,7 +25,7 @@ function smartFilterText(text) {
   out = collapseRepeated(out);
   if (out.length > MAX_TEXT_CHARS) {
     const head = out.slice(0, MAX_TEXT_CHARS - 300);
-    out = `${head}\n\n... [truncated ${text.length - head.length} chars by 9router bridge. Page is large; ask user to scroll/navigate to a specific section, or click an element with the refs shown above]`;
+    out = `${head}\n\n... [truncated ${text.length - head.length} chars by LINA Router bridge. Page is large; ask user to scroll/navigate to a specific section, or click an element with the refs shown above]`;
   }
   return out;
 }
@@ -54,7 +54,7 @@ function collapseRepeated(text) {
       const headEnd = findNthSiblingEnd(lines, i, indent, role, COLLAPSE_KEEP_HEAD);
       const tailStart = findLastNSiblingStart(lines, j, indent, role, COLLAPSE_KEEP_TAIL);
       for (let k = i; k < headEnd; k++) out.push(lines[k]);
-      out.push(`${indent}... [${groupLen - COLLAPSE_KEEP_HEAD - COLLAPSE_KEEP_TAIL} similar "${role}" items omitted by 9router bridge]`);
+      out.push(`${indent}... [${groupLen - COLLAPSE_KEEP_HEAD - COLLAPSE_KEEP_TAIL} similar "${role}" items omitted by LINA Router bridge]`);
       for (let k = tailStart; k < j; k++) out.push(lines[k]);
     } else {
       for (let k = i; k < j; k++) out.push(lines[k]);
@@ -107,8 +107,8 @@ const getStore = () => {
 };
 
 const getCustomStore = () => {
-  if (!globalThis.__9routerCustomPlugins) globalThis.__9routerCustomPlugins = new Map();
-  return globalThis.__9routerCustomPlugins;
+  if (!globalThis.__LinaRouterCustomPlugins) globalThis.__LinaRouterCustomPlugins = new Map();
+  return globalThis.__LinaRouterCustomPlugins;
 };
 
 function registerCustomPlugin(def) {
@@ -188,3 +188,4 @@ function isRunning(name) {
 }
 
 module.exports = { getOrSpawn, registerSession, unregisterSession, sendToChild, isRunning, findPlugin, registerCustomPlugin };
+

@@ -1,8 +1,8 @@
-import fs from "node:fs";
+﻿import fs from "node:fs";
 import path from "path";
 import os from "os";
 
-const APP_NAME = "9router";
+const APP_NAME = "LINA Router";
 
 function defaultDir() {
   if (process.platform === "win32") {

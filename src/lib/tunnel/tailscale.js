@@ -1,4 +1,4 @@
-import fs from "fs";
+﻿import fs from "fs";
 import path from "path";
 import os from "os";
 import { execSync, exec, spawn } from "child_process";
@@ -446,7 +446,7 @@ function isDaemonTunMode() {
  * Start tailscaled.
  * - With sudoPassword: TUN mode (root) → Funnel TLS works
  * - Without: userspace-networking fallback (no sudo, but Funnel TLS unstable)
- * State always lives in ~/.9router/tailscale/ via --statedir.
+ * State always lives in ~/.LINA Router/tailscale/ via --statedir.
  */
 export async function startDaemonWithPassword(sudoPassword) {
   if (IS_WINDOWS) {
