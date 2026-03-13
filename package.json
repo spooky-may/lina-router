@@ -1,8 +1,10 @@
 {
-  "name": "9router-app",
-  "version": "0.4.31",
-  "description": "9Router web dashboard",
-  "private": true,
+  "name": "lina-router",
+  "version": "0.4.32",
+  "description": "Save 20-40% tokens. Route your AI coding tools to 40+ providers. Free models included.",
+  "bin": {
+    "lina-router": "./bin/lina-router.js"
+  },
   "scripts": {
     "dev": "next dev --webpack --port 20128",
     "build": "NODE_ENV=production next build --webpack",
