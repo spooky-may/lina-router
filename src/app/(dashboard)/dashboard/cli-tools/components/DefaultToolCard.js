@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { Card, ModelSelectModal } from "@/shared/components";
@@ -19,7 +19,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
   const replaceVars = (text) => {
     const keyToUse = (selectedApiKey && selectedApiKey.trim()) 
       ? selectedApiKey 
-      : (!cloudEnabled ? "sk_9router" : "your-api-key");
+      : (!cloudEnabled ? "sk_lina-router" : "your-api-key");
     
     // Add /v1 suffix only if not already present (DRY - avoid duplicate)
     const normalizedBaseUrl = baseUrl || "http://localhost:20128";

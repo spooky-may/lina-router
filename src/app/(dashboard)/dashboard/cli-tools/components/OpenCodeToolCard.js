@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
@@ -53,8 +53,8 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
     }
 
     // Parse subagent settings from agent.explorer if exists
-    if (status?.config?.agent?.explorer?.model?.startsWith("9router/")) {
-      setSubagentModel(status.config.agent.explorer.model.replace("9router/", ""));
+    if (status?.config?.agent?.explorer?.model?.startsWith("LINA Router/")) {
+      setSubagentModel(status.config.agent.explorer.model.replace("LINA Router/", ""));
     }
   }, [status]);
 
@@ -71,8 +71,8 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
   const getConfigStatus = () => {
     if (!status?.installed) return null;
     if (!status.config) return "not_configured";
-    if (!status.has9Router) return "not_configured";
-    const url = status.config?.provider?.["9router"]?.options?.baseURL || "";
+    if (!status.hasLinaRouter) return "not_configured";
+    const url = status.config?.provider?.["LINA Router"]?.options?.baseURL || "";
     return matchKnownEndpoint(url, { tunnelPublicUrl, tailscaleUrl }) ? "configured" : "other";
   };
 
@@ -104,7 +104,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
     try {
       const keyToUse = (selectedApiKey && selectedApiKey.trim())
         ? selectedApiKey
-        : (!cloudEnabled ? "sk_9router" : selectedApiKey);
+        : (!cloudEnabled ? "sk_lina-router" : selectedApiKey);
 
       const res = await fetch("/api/cli-tools/opencode-settings", {
         method: "POST",
@@ -157,7 +157,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
   const getManualConfigs = () => {
     const keyToUse = (selectedApiKey && selectedApiKey.trim())
       ? selectedApiKey
-      : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
+      : (!cloudEnabled ? "sk_lina-router" : "<API_KEY_FROM_DASHBOARD>");
 
     const modelsToShow = selectedModels.length > 0 ? selectedModels : ["provider/model-id"];
     const activeModelToShow = activeModel || selectedModels[0] || modelsToShow[0];
@@ -172,18 +172,18 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
       filename: "~/.config/opencode/opencode.json",
       content: JSON.stringify({
         provider: {
-          "9router": {
+          "LINA Router": {
             npm: "@ai-sdk/openai-compatible",
             options: { baseURL: getEffectiveBaseUrl(), apiKey: keyToUse },
             models: modelsObj,
           },
         },
-        model: `9router/${activeModelToShow}`,
+        model: `LINA Router/${activeModelToShow}`,
         agent: {
           explorer: {
             description: "Fast explorer subagent for codebase exploration",
             mode: "subagent",
-            model: `9router/${effectiveSubagentModel}`
+            model: `LINA Router/${effectiveSubagentModel}`
           }
         }
       }, null, 2),
@@ -226,7 +226,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                   <span className="material-symbols-outlined text-yellow-500">warning</span>
                   <div className="flex-1">
                     <p className="font-medium text-yellow-600 dark:text-yellow-400">OpenCode CLI not detected locally</p>
-                    <p className="text-sm text-text-muted">Manual configuration is still available if 9router is deployed on a remote server.</p>
+                    <p className="text-sm text-text-muted">Manual configuration is still available if LINA Router is deployed on a remote server.</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 pl-9">
@@ -275,12 +275,12 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                 </div>
 
                 {/* Current configured */}
-                {status?.config?.provider?.["9router"]?.options?.baseURL && (
+                {status?.config?.provider?.["LINA Router"]?.options?.baseURL && (
                   <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                     <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Current</span>
                     <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                     <span className="min-w-0 truncate rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5">
-                      {status.config.provider["9router"].options.baseURL}
+                      {status.config.provider["LINA Router"].options.baseURL}
                     </span>
                   </div>
                 )}
@@ -413,7 +413,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                 <Button variant="primary" size="sm" onClick={handleApply} disabled={selectedModels.length === 0} loading={applying}>
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
-                <Button variant="outline" size="sm" onClick={handleReset} disabled={!status.has9Router} loading={restoring}>
+                <Button variant="outline" size="sm" onClick={handleReset} disabled={!status.hasLinaRouter} loading={restoring}>
                   <span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)}>
