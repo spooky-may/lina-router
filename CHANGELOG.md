@@ -1,3 +1,20 @@
+# v0.4.31 (2026-05-12)
+
+## Features
+- OIDC dashboard login: Authentik/Keycloak/Google/Okta SSO with password-only, OIDC-only, or both modes (#1020)
+- Linux/arm64 Docker image support (#979)
+- Codex GPT 5.5 image support (#991)
+- Done button in ModelSelectModal during combo creation (#1031)
+- CLI: reset auth mode to password (emergency OIDC lockout recovery)
+
+## Fixes
+- DATA_DIR: graceful fallback to ~/.9router on EACCES/EPERM (#1005)
+- React hooks: variable declaration order & lazy initialization (#1017)
+
+## Improvements
+- Profile page: OIDC settings card collapsed by default to reduce clutter
+- Header: user pill only shown when logged in via OIDC
+
 # v0.4.30 (2026-05-11)
 
 ## Features
