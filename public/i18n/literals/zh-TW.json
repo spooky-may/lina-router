@@ -180,7 +180,7 @@
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Antigravity/Copilot IDE 請求 → DNS 重定向到 localhost:443 → MITM 代理攔截 → 9Router → 响應到 Antigravity/Copilot",
   "API Key": "API 金鑰",
   "No API keys — create one in Keys page": "沒有 API 金鑰 — 在金鑰頁面中創建一個",
-  "sk_9router (default)": "sk_9router（默認）",
+  "sk_lina-router (default)": "sk_lina-router（默認）",
   "Server started": "服務器已啟動",
   "Failed to start server": "啟動服務器失敗",
   "Server stopped — all DNS cleared": "服務器已停止 — 已清除所有 DNS",

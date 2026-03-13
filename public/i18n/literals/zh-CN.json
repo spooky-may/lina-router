@@ -551,7 +551,7 @@
   "Install 9Router": "安装 9Router",
   "Open Dashboard": "打开仪表盘",
   "Route Requests": "路由请求",
-  "npm install -g 9router": "npm install -g 9router",
+  "npm install -g lina-router": "npm install -g lina-router",
   "open http://localhost:9099": "open http://localhost:9099",
   "Ready! Requests route automatically through your configured providers.": "就绪！请求将自动通过您配置的提供商路由。",
 
@@ -621,7 +621,7 @@
   "Token Saver": "Token 节省器",
   "Experimental": "实验性",
   "Compress tool output to reduce token usage.": "压缩工具输出以减少 Token 使用量。",
-  "sk_9router (default)": "sk_9router（默认）",
+  "sk_lina-router (default)": "sk_lina-router（默认）",
 
   "Install Tailscale": "安装 Tailscale",
   "Installing Tailscale...": "正在安装 Tailscale...",
@@ -691,7 +691,7 @@
   "Access your terminal, desktop & files from anywhere": "从任何地方访问您的终端、桌面和文件",
   "Get 9Remote": "获取 9Remote",
 
-  "Manual configuration is still available if 9router is deployed on a remote server.": "如果 9router 部署在远程服务器上，仍可使用手动配置。",
+  "Manual configuration is still available if lina-router is deployed on a remote server.": "如果 lina-router 部署在远程服务器上，仍可使用手动配置。",
   "How to Install": "如何安装",
   "Hide": "隐藏",
   "Filter naming": "过滤命名",

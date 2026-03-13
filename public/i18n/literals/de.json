@@ -180,7 +180,7 @@
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Antigravity/Copilot IDE-Anforderung → DNS-Umleitung auf localhost:443 → MITM-Proxy abfangen → 9Router → Antwort auf Antigravity/Copilot",
   "API Key": "API-Schlüssel",
   "No API keys — create one in Keys page": "Keine API-Schlüssel — erstellen Sie einen auf der Seite Schlüssel",
-  "sk_9router (default)": "sk_9router (Standard)",
+  "sk_lina-router (default)": "sk_lina-router (Standard)",
   "Server started": "Server gestartet",
   "Failed to start server": "Server konnte nicht gestartet werden",
   "Server stopped — all DNS cleared": "Server gestoppt — alle DNS gelöscht",

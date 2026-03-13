@@ -180,7 +180,7 @@
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Antigravity/Copilot IDE درخواست → DNS کو localhost:443 کی طرف ری ڈائریکٹ کریں → MITM پروکسی روکے → 9Router → Antigravity/Copilot کو جواب",
   "API Key": "API کلید",
   "No API keys — create one in Keys page": "کوئی API کلید نہیں — Keys صفحہ میں ایک بنائیں",
-  "sk_9router (default)": "sk_9router (ڈیفالٹ)",
+  "sk_lina-router (default)": "sk_lina-router (ڈیفالٹ)",
   "Server started": "سرور شروع ہوگیا",
   "Failed to start server": "سرور شروع کرنے میں ناکام",
   "Server stopped — all DNS cleared": "سرور بند — تمام DNS صاف کیے گئے",

@@ -180,7 +180,7 @@
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Antigravity/Copilot IDE 요청 → localhost:443로 DNS 리디렉션 → MITM 프록시가 가로챔 → 9Router → Antigravity/Copilot으로 응답",
   "API Key": "API 키",
   "No API keys — create one in Keys page": "API 키 없음 — 키 페이지에서 만들기",
-  "sk_9router (default)": "sk_9router (기본값)",
+  "sk_lina-router (default)": "sk_lina-router (기본값)",
   "Server started": "서버 시작됨",
   "Failed to start server": "서버 시작 실패",
   "Server stopped — all DNS cleared": "서버 중지됨 — 모든 DNS 지워짐",
