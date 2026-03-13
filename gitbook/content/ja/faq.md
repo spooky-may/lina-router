@@ -164,7 +164,7 @@ Dashboard → Providers → Quota Tracking
 
 ```
 Cursor Settings → Models → Advanced:
-  OpenAI API Base URL: https://9router.com/v1
+  OpenAI API Base URL: https://lina-router.com/v1
   OpenAI API Key: [ダッシュボードから取得]
   Model: cc/claude-opus-4-5-20251101
 ```
@@ -172,8 +172,8 @@ Cursor Settings → Models → Advanced:
 **代替案:** パブリックドメインでVPSにセルフホスト:
 ```bash
 # VPSへデプロイ
-git clone https://github.com/decolua/9router.git
-cd 9router/app
+git clone https://github.com/decolua/lina-router.git
+cd lina-router/app
 npm install && npm run build
 npm start
 
@@ -198,16 +198,16 @@ npm start
 
 ### Localhost(デフォルト)
 ```bash
-npm install -g 9router
-9router
+npm install -g lina-router
+lina-router
 → Dashboard: http://localhost:3000
 → API: http://localhost:20128/v1
 ```
 
 ### VPS/クラウド
 ```bash
-git clone https://github.com/decolua/9router.git
-cd 9router/app
+git clone https://github.com/decolua/lina-router.git
+cd lina-router/app
 npm install && npm run build
 
 export JWT_SECRET="your-secure-secret"
@@ -219,23 +219,23 @@ npm start
 
 ### Docker
 ```bash
-docker build -t 9router .
+docker build -t lina-router .
 docker run -d \
   -p 3000:3000 \
   -e JWT_SECRET="your-secret" \
-  -v 9router-data:/app/data \
-  9router
+  -v lina-router-data:/app/data \
+  lina-router
 ```
 
 ### Cloudflare Workers
 ```bash
-cd 9router/app
+cd lina-router/app
 npm run deploy:cloudflare
 ```
 
 **環境変数:**
 - `JWT_SECRET` - **本番環境で必ず変更!**
-- `DATA_DIR` - データベース保存パス(デフォルト: `~/.9router`)
+- `DATA_DIR` - データベース保存パス(デフォルト: `~/.lina-router`)
 - `INITIAL_PASSWORD` - ダッシュボードログイン(デフォルト: `123456`)
 - `NODE_ENV` - デプロイ時は`production`に設定
 
@@ -248,7 +248,7 @@ npm run deploy:cloudflare
 **はい、9Routerはセキュリティとプライバシーを優先します:**
 
 **ローカルストレージ:**
-- すべてのデータは`~/.9router`(またはカスタム`DATA_DIR`)にローカル保存
+- すべてのデータは`~/.lina-router`(またはカスタム`DATA_DIR`)にローカル保存
 - 9Routerサーバーへのデータ送信なし
 - OAuthトークンはJWTで暗号化
 
@@ -287,12 +287,12 @@ npm run deploy:cloudflare
 
 ### グローバルNPMインストール
 ```bash
-npm update -g 9router
+npm update -g lina-router
 ```
 
 ### ローカルインストール
 ```bash
-cd 9router/app
+cd lina-router/app
 git pull origin main
 npm install
 npm run build
@@ -301,23 +301,23 @@ npm start
 
 ### Docker
 ```bash
-docker pull 9router:latest
-docker stop 9router
-docker rm 9router
+docker pull lina-router:latest
+docker stop lina-router
+docker rm lina-router
 docker run -d \
   -p 3000:3000 \
-  -v 9router-data:/app/data \
-  9router:latest
+  -v lina-router-data:/app/data \
+  lina-router:latest
 ```
 
 **バージョンを確認:**
 ```bash
-9router --version
+lina-router --version
 ```
 
 **破壊的変更:**
-- [CHANGELOG.md](https://github.com/decolua/9router/blob/main/CHANGELOG.md)を確認
-- メジャー更新前に`~/.9router`をバックアップ
+- [CHANGELOG.md](https://github.com/decolua/lina-router/blob/main/CHANGELOG.md)を確認
+- メジャー更新前に`~/.lina-router`をバックアップ
 - メジャーバージョンの移行ガイドを確認
 
 ---
@@ -329,18 +329,18 @@ docker run -d \
 ### 貢献方法:
 
 1. **バグを報告:**
-   - [GitHub Issues](https://github.com/decolua/9router/issues)
+   - [GitHub Issues](https://github.com/decolua/lina-router/issues)
    - エラーログ、再現手順を含める
 
 2. **機能をリクエスト:**
-   - [GitHub Discussions](https://github.com/decolua/9router/discussions)
+   - [GitHub Discussions](https://github.com/decolua/lina-router/discussions)
    - ユースケースと利点を説明
 
 3. **コードを提出:**
    ```bash
    # リポジトリをフォーク
-   git clone https://github.com/YOUR_USERNAME/9router.git
-   cd 9router
+   git clone https://github.com/YOUR_USERNAME/lina-router.git
+   cd lina-router
    
    # ブランチを作成
    git checkout -b feature/your-feature
@@ -375,13 +375,13 @@ docker run -d \
 - ドキュメントを更新
 - コミットは小さく、わかりやすく
 
-詳細は[CONTRIBUTING.md](https://github.com/decolua/9router/blob/main/CONTRIBUTING.md)を参照。
+詳細は[CONTRIBUTING.md](https://github.com/decolua/lina-router/blob/main/CONTRIBUTING.md)を参照。
 
 ---
 
 ## さらにヘルプが必要?
 
-- **ドキュメント:** [9router.com/docs](https://9router.com/docs)
-- **GitHub:** [github.com/decolua/9router](https://github.com/decolua/9router)
-- **Issues:** [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **ドキュメント:** [lina-router.com/docs](https://lina-router.com/docs)
+- **GitHub:** [github.com/decolua/lina-router](https://github.com/decolua/lina-router)
+- **Issues:** [github.com/decolua/lina-router/issues](https://github.com/decolua/lina-router/issues)
 - **トラブルシューティング:** [troubleshooting.md](troubleshooting.md)

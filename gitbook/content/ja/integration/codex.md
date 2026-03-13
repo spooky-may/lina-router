@@ -19,7 +19,7 @@
 export OPENAI_BASE_URL="http://localhost:20128/v1"
 
 # 9RouterダッシュボードからのAPIキー
-export OPENAI_API_KEY="your-9router-api-key"
+export OPENAI_API_KEY="your-lina-router-api-key"
 ```
 
 ### 2. シェル設定をリロード
@@ -77,7 +77,7 @@ codex --model cx/gpt-5.1-codex-max "Explain what this code does: $(cat myfile.js
 ```json
 {
   "baseUrl": "http://localhost:20128/v1",
-  "apiKey": "your-9router-api-key",
+  "apiKey": "your-lina-router-api-key",
   "defaultModel": "cx/gpt-5.2-codex"
 }
 ```
@@ -113,7 +113,7 @@ codex --model cx/gpt-5.1-codex-max "Explain what this code does: $(cat myfile.js
 localhostの代わりに9Routerクラウドエンドポイントを使用するには:
 
 ```bash
-export OPENAI_BASE_URL="https://9router.com"
+export OPENAI_BASE_URL="https://lina-router.com"
 ```
 
 9RouterクラウドダッシュボードでAPIキーが設定されていることを確認してください。

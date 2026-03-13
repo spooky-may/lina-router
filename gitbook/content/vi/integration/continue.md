@@ -6,7 +6,7 @@ Tích hợp 9Router với extension Continue để mang trợ lý AI trực ti�
 
 - Visual Studio Code đã cài đặt
 - Extension Continue đã cài đặt từ VSCode marketplace
-- 9Router API key từ [dashboard](https://9router.com/dashboard)
+- 9Router API key từ [dashboard](https://lina-router.com/dashboard)
 - 9Router đang chạy (cục bộ hoặc cloud)
 
 ## Các bước Cấu hình
@@ -76,7 +76,7 @@ Thêm cấu hình sau vào `config.json`:
 **Cho Cloud 9Router:**
 Thay `apiBase` bằng:
 ```json
-"apiBase": "https://9router.com/v1"
+"apiBase": "https://lina-router.com/v1"
 ```
 
 ### 3. Lưu và Reload

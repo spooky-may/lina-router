@@ -5,7 +5,7 @@ Integrate 9Router with Roo AI Assistant to access multiple AI models through a u
 ## Prerequisites
 
 - Roo AI Assistant installed
-- 9Router API key from [dashboard](https://9router.com/dashboard)
+- 9Router API key from [dashboard](https://lina-router.com/dashboard)
 - 9Router running (local or cloud)
 
 ## Configuration Steps
@@ -28,7 +28,7 @@ API Key: your-api-key-from-dashboard
 
 **For Cloud 9Router:**
 ```
-Base URL: https://9router.com/v1
+Base URL: https://lina-router.com/v1
 API Key: your-api-key-from-dashboard
 ```
 

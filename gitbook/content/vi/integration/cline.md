@@ -34,7 +34,7 @@ http://localhost:20128/v1
 
 **Cho 9Router cloud:**
 ```
-https://9router.com
+https://lina-router.com
 ```
 
 **Các bước:**
@@ -45,7 +45,7 @@ https://9router.com
 
 1. Trong field **API Key**, nhập API key 9Router của bạn
 2. Bạn có thể tìm API key trong 9Router dashboard tại **Settings → API Keys**
-3. Key bắt đầu bằng `sk-9router-`
+3. Key bắt đầu bằng `sk-lina-router-`
 
 ### 5. Chọn Model
 
@@ -71,7 +71,7 @@ Cline settings của bạn nên trông như sau:
 ```
 API Provider: Ollama
 Base URL: http://localhost:20128/v1
-API Key: sk-9router-xxxxxxxxxxxxx
+API Key: sk-lina-router-xxxxxxxxxxxxx
 Model: gpt-4
 ```
 
@@ -126,7 +126,7 @@ Bạn có thể dùng bất kỳ model nào đã cấu hình trong 9Router dashb
 ### Lỗi "Invalid API Key"
 
 1. Xác minh API key trong 9Router dashboard
-2. Đảm bảo bạn sao chép đầy đủ key bao gồm prefix `sk-9router-`
+2. Đảm bảo bạn sao chép đầy đủ key bao gồm prefix `sk-lina-router-`
 3. Kiểm tra API key chưa hết hạn
 4. Thử tạo API key mới
 
@@ -150,7 +150,7 @@ Bạn có thể dùng bất kỳ model nào đã cấu hình trong 9Router dashb
 
 Để dùng 9Router cloud endpoint thay vì localhost:
 
-1. Trong Cline settings, đặt Base URL: `https://9router.com`
+1. Trong Cline settings, đặt Base URL: `https://lina-router.com`
 2. Đảm bảo bạn đã cấu hình API key trong 9Router cloud dashboard
 3. Đảm bảo cloud endpoint đang hoạt động và truy cập được
 

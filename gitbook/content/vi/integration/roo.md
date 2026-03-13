@@ -5,7 +5,7 @@ Tích hợp 9Router với Roo AI Assistant để truy cập nhiều model AI qua
 ## Yêu cầu
 
 - Roo AI Assistant đã cài đặt
-- 9Router API key từ [dashboard](https://9router.com/dashboard)
+- 9Router API key từ [dashboard](https://lina-router.com/dashboard)
 - 9Router đang chạy (cục bộ hoặc cloud)
 
 ## Các bước Cấu hình
@@ -28,7 +28,7 @@ API Key: your-api-key-from-dashboard
 
 **Cho 9Router cloud:**
 ```
-Base URL: https://9router.com/v1
+Base URL: https://lina-router.com/v1
 API Key: your-api-key-from-dashboard
 ```
 

@@ -6,7 +6,7 @@ Integra 9Router con la extensión Continue para llevar la asistencia de IA direc
 
 - Visual Studio Code instalado
 - Extensión Continue instalada desde el marketplace de VSCode
-- API key de 9Router desde el [dashboard](https://9router.com/dashboard)
+- API key de 9Router desde el [dashboard](https://lina-router.com/dashboard)
 - 9Router ejecutándose (local o en la nube)
 
 ## Pasos de configuración
@@ -76,7 +76,7 @@ Agrega la siguiente configuración a tu `config.json`:
 **Para 9Router en la nube:**
 Reemplaza `apiBase` con:
 ```json
-"apiBase": "https://9router.com/v1"
+"apiBase": "https://lina-router.com/v1"
 ```
 
 ### 3. Guardar y recargar

@@ -9,7 +9,7 @@ Khởi chạy 9Router trong 5 phút và bắt đầu định tuyến các reques
 ### 1. Cài đặt
 
 ```bash
-npm install -g 9router
+npm install -g lina-router
 ```
 
 **Yêu cầu:** Node.js 20+ ([Chi tiết cài đặt](getting-started/installation.md))
@@ -17,7 +17,7 @@ npm install -g 9router
 ### 2. Khởi chạy
 
 ```bash
-9router
+lina-router
 ```
 
 🎉 **Dashboard tự động mở** tại `http://localhost:20128`
@@ -90,7 +90,7 @@ Trỏ công cụ code của bạn tới 9Router:
 ```
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
-  OpenAI API Key: [from 9router dashboard]
+  OpenAI API Key: [from lina-router dashboard]
   Model: cc/claude-opus-4-5-20251101
 ```
 
@@ -101,7 +101,7 @@ Sửa `~/.claude/config.json`:
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
-  "anthropic_api_key": "your-9router-api-key"
+  "anthropic_api_key": "your-lina-router-api-key"
 }
 ```
 
@@ -118,7 +118,7 @@ Model: cc/claude-opus-4-5-20251101
 
 ```bash
 export OPENAI_BASE_URL="http://localhost:20128"
-export OPENAI_API_KEY="your-9router-api-key"
+export OPENAI_API_KEY="your-lina-router-api-key"
 
 codex "your prompt"
 ```
@@ -242,6 +242,6 @@ Daily routine:
 
 ## Cần trợ giúp?
 
-- **Website**: [9router.com](https://9router.com)
-- **GitHub**: [github.com/decolua/9router](https://github.com/decolua/9router)
-- **Issues**: [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **Website**: [lina-router.com](https://lina-router.com)
+- **GitHub**: [github.com/decolua/lina-router](https://github.com/decolua/lina-router)
+- **Issues**: [github.com/decolua/lina-router/issues](https://github.com/decolua/lina-router/issues)

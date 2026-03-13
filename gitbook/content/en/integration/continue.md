@@ -6,7 +6,7 @@ Integrate 9Router with Continue extension to bring AI assistance directly into V
 
 - Visual Studio Code installed
 - Continue extension installed from VSCode marketplace
-- 9Router API key from [dashboard](https://9router.com/dashboard)
+- 9Router API key from [dashboard](https://lina-router.com/dashboard)
 - 9Router running (local or cloud)
 
 ## Configuration Steps
@@ -76,7 +76,7 @@ Add the following configuration to your `config.json`:
 **For Cloud 9Router:**
 Replace `apiBase` with:
 ```json
-"apiBase": "https://9router.com/v1"
+"apiBase": "https://lina-router.com/v1"
 ```
 
 ### 3. Save and Reload

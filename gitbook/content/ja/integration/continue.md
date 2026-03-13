@@ -6,7 +6,7 @@
 
 - Visual Studio Codeがインストール済み
 - VSCodeマーケットプレイスからContinue拡張機能がインストール済み
-- [ダッシュボード](https://9router.com/dashboard)からの9Router APIキー
+- [ダッシュボード](https://lina-router.com/dashboard)からの9Router APIキー
 - 9Routerが動作中 (ローカルまたはクラウド)
 
 ## 設定手順
@@ -76,7 +76,7 @@
 **クラウド9Router用:**
 `apiBase` を以下に置き換え:
 ```json
-"apiBase": "https://9router.com/v1"
+"apiBase": "https://lina-router.com/v1"
 ```
 
 ### 3. 保存してリロード

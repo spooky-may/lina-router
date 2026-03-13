@@ -143,7 +143,7 @@
 
 1. **9Routerを起動:**
    ```bash
-   9router
+   lina-router
    ```
    ダッシュボードがhttp://localhost:3000で開くはず
 
@@ -164,7 +164,7 @@
 4. **クラウドエンドポイントを使用:**
    localhostが動作しない場合(例: Cursor IDE):
    ```
-   Endpoint: https://9router.com/v1
+   Endpoint: https://lina-router.com/v1
    ```
 
 ---
@@ -183,7 +183,7 @@
 1. **9Routerが実行中か確認:**
    ```bash
    # プロセスを確認
-   ps aux | grep 9router
+   ps aux | grep lina-router
    
    # ポート3000を確認
    lsof -i :3000
@@ -202,10 +202,10 @@
 3. **9Routerを再起動:**
    ```bash
    # 停止
-   pkill -f 9router
+   pkill -f lina-router
    
    # 起動
-   9router
+   lina-router
    ```
 
 4. **ブラウザキャッシュをクリア:**
@@ -346,6 +346,6 @@
 
 ## さらにヘルプが必要?
 
-- **GitHub Issues:** [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
-- **ドキュメント:** [9router.com/docs](https://9router.com/docs)
+- **GitHub Issues:** [github.com/decolua/lina-router/issues](https://github.com/decolua/lina-router/issues)
+- **ドキュメント:** [lina-router.com/docs](https://lina-router.com/docs)
 - **FAQ:** [faq.md](faq.md)

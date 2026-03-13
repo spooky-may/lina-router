@@ -103,7 +103,7 @@ If you get "model not found" errors:
 To use 9Router cloud endpoint instead of localhost:
 
 ```bash
-export ANTHROPIC_BASE_URL="https://9router.com"
+export ANTHROPIC_BASE_URL="https://lina-router.com"
 ```
 
 Make sure you have configured your API key in the 9Router cloud dashboard.

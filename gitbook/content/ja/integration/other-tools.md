@@ -24,7 +24,7 @@ Model: 任意の9Routerモデル (cc/*, cx/*, glm/*など)
 
 **クラウド9Router:**
 ```
-Base URL: https://9router.com/v1
+Base URL: https://lina-router.com/v1
 API Key: your-api-key-from-dashboard
 Model: 任意の9Routerモデル (cc/*, cx/*, glm/*など)
 ```

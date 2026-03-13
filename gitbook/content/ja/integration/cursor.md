@@ -11,7 +11,7 @@
 
 ## ⚠️ 重要な注意点
 
-> **クラウドエンドポイントが必要**: Cursorは独自のサーバー経由でリクエストをルーティングし、localhostエンドポイントをサポートしません。9Routerクラウドエンドポイント `https://9router.com` を使用する必要があります。
+> **クラウドエンドポイントが必要**: Cursorは独自のサーバー経由でリクエストをルーティングし、localhostエンドポイントをサポートしません。9Routerクラウドエンドポイント `https://lina-router.com` を使用する必要があります。
 
 > **Cursor Proが必要**: この機能はカスタムAPIエンドポイントを使用するためにCursor Proアカウントが必要です。
 
@@ -33,12 +33,12 @@
 Base URLを9Routerクラウドエンドポイントに設定:
 
 ```
-https://9router.com
+https://lina-router.com
 ```
 
 **手順:**
 1. Models設定で **Base URL** フィールドを見つける
-2. 入力: `https://9router.com`
+2. 入力: `https://lina-router.com`
 3. **Save** をクリック
 
 ### 4. APIキーを追加
@@ -66,8 +66,8 @@ Cursor設定は次のようになります:
 
 ```
 OpenAI API: ✓ Enabled
-Base URL: https://9router.com
-API Key: sk-9router-xxxxxxxxxxxxx
+Base URL: https://lina-router.com
+API Key: sk-lina-router-xxxxxxxxxxxxx
 Custom Models: gpt-4, claude-opus-4-5, gemini-2.0-flash
 ```
 
@@ -110,7 +110,7 @@ Custom Models: gpt-4, claude-opus-4-5, gemini-2.0-flash
 ### 「Invalid API Key」エラー
 
 1. 9RouterダッシュボードでAPIキーを確認
-2. `sk-9router-` プレフィックスを含むキー全体をコピーしたか確認
+2. `sk-lina-router-` プレフィックスを含むキー全体をコピーしたか確認
 3. APIキーが期限切れでないか確認
 4. 新しいAPIキーを再生成してみる
 
@@ -123,14 +123,14 @@ Custom Models: gpt-4, claude-opus-4-5, gemini-2.0-flash
 
 ### 接続の問題
 
-1. クラウドエンドポイントを使用しているか確認: `https://9router.com`
+1. クラウドエンドポイントを使用しているか確認: `https://lina-router.com`
 2. インターネット接続を確認
 3. 9Routerクラウドサービスが運用中か確認
 4. VPNまたはプロキシが有効な場合は無効化してみる
 
 ### Localhostが動作しない
 
-> **覚えておいてください**: Cursorはlocalhostエンドポイントをサポートしません。クラウドエンドポイント `https://9router.com` を使用する必要があります。ローカル9Routerインスタンスを使用したい場合は、ngrokなどのトンネリングサービスを検討してローカルエンドポイントを公開してください。
+> **覚えておいてください**: Cursorはlocalhostエンドポイントをサポートしません。クラウドエンドポイント `https://lina-router.com` を使用する必要があります。ローカル9Routerインスタンスを使用したい場合は、ngrokなどのトンネリングサービスを検討してローカルエンドポイントを公開してください。
 
 ## クラウドエンドポイントのセットアップ
 

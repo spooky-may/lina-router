@@ -11,7 +11,7 @@ Tích hợp 9Router với Cursor IDE để định tuyến request AI qua hệ t
 
 ## ⚠️ Lưu ý Quan trọng
 
-> **Yêu cầu Cloud Endpoint**: Cursor định tuyến request qua server của chính nó và không hỗ trợ endpoint localhost. Bạn phải dùng 9Router cloud endpoint: `https://9router.com`
+> **Yêu cầu Cloud Endpoint**: Cursor định tuyến request qua server của chính nó và không hỗ trợ endpoint localhost. Bạn phải dùng 9Router cloud endpoint: `https://lina-router.com`
 
 > **Yêu cầu Cursor Pro**: Tính năng này yêu cầu tài khoản Cursor Pro để dùng custom API endpoint.
 
@@ -33,12 +33,12 @@ Tích hợp 9Router với Cursor IDE để định tuyến request AI qua hệ t
 Đặt base URL tới 9Router cloud endpoint:
 
 ```
-https://9router.com
+https://lina-router.com
 ```
 
 **Các bước:**
 1. Trong cài đặt Models, tìm field **Base URL**
-2. Nhập: `https://9router.com`
+2. Nhập: `https://lina-router.com`
 3. Click **Save**
 
 ### 4. Thêm API Key
@@ -66,8 +66,8 @@ Cursor settings của bạn nên trông như sau:
 
 ```
 OpenAI API: ✓ Enabled
-Base URL: https://9router.com
-API Key: sk-9router-xxxxxxxxxxxxx
+Base URL: https://lina-router.com
+API Key: sk-lina-router-xxxxxxxxxxxxx
 Custom Models: gpt-4, claude-opus-4-5, gemini-2.0-flash
 ```
 
@@ -110,7 +110,7 @@ Bạn có thể dùng bất kỳ model nào đã cấu hình trong 9Router dashb
 ### Lỗi "Invalid API Key"
 
 1. Xác minh API key trong 9Router dashboard
-2. Đảm bảo bạn sao chép đầy đủ key bao gồm prefix `sk-9router-`
+2. Đảm bảo bạn sao chép đầy đủ key bao gồm prefix `sk-lina-router-`
 3. Kiểm tra API key chưa hết hạn
 4. Thử tạo API key mới
 
@@ -123,14 +123,14 @@ Bạn có thể dùng bất kỳ model nào đã cấu hình trong 9Router dashb
 
 ### Lỗi Connection
 
-1. Xác minh bạn đang dùng cloud endpoint: `https://9router.com`
+1. Xác minh bạn đang dùng cloud endpoint: `https://lina-router.com`
 2. Kiểm tra kết nối internet
 3. Đảm bảo dịch vụ 9Router cloud đang hoạt động
 4. Thử tắt VPN hoặc proxy nếu đang bật
 
 ### Localhost không hoạt động
 
-> **Nhớ**: Cursor không hỗ trợ endpoint localhost. Bạn phải dùng cloud endpoint `https://9router.com`. Nếu cần dùng 9Router cục bộ, hãy cân nhắc dùng dịch vụ tunneling như ngrok để expose endpoint cục bộ.
+> **Nhớ**: Cursor không hỗ trợ endpoint localhost. Bạn phải dùng cloud endpoint `https://lina-router.com`. Nếu cần dùng 9Router cục bộ, hãy cân nhắc dùng dịch vụ tunneling như ngrok để expose endpoint cục bộ.
 
 ## Setup Cloud Endpoint
 

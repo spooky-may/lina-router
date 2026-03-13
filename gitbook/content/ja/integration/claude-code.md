@@ -103,7 +103,7 @@ Claude Codeは設定を `~/.claude/settings.json` に保存します。必要に
 localhostの代わりに9Routerクラウドエンドポイントを使用するには:
 
 ```bash
-export ANTHROPIC_BASE_URL="https://9router.com"
+export ANTHROPIC_BASE_URL="https://lina-router.com"
 ```
 
 9RouterクラウドダッシュボードでAPIキーが設定されていることを確認してください。

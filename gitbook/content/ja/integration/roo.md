@@ -5,7 +5,7 @@
 ## 前提条件
 
 - Roo AIアシスタントがインストール済み
-- [ダッシュボード](https://9router.com/dashboard)からの9Router APIキー
+- [ダッシュボード](https://lina-router.com/dashboard)からの9Router APIキー
 - 9Routerが動作中 (ローカルまたはクラウド)
 
 ## 設定手順
@@ -28,7 +28,7 @@ API Key: your-api-key-from-dashboard
 
 **クラウド9Router用:**
 ```
-Base URL: https://9router.com/v1
+Base URL: https://lina-router.com/v1
 API Key: your-api-key-from-dashboard
 ```
 

@@ -24,7 +24,7 @@ Model: any 9Router model (cc/*, cx/*, glm/*, etc.)
 
 **9Router cloud:**
 ```
-Base URL: https://9router.com/v1
+Base URL: https://lina-router.com/v1
 API Key: your-api-key-from-dashboard
 Model: any 9Router model (cc/*, cx/*, glm/*, etc.)
 ```

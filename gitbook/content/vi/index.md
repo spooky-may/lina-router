@@ -105,10 +105,10 @@ Bắt đầu trong 2 phút:
 
 ```bash
 # Install globally
-npm install -g 9router
+npm install -g lina-router
 
 # Start (dashboard opens automatically)
-9router
+lina-router
 ```
 
 🎉 **Dashboard mở** → Kết nối provider → Bắt đầu code!
@@ -143,7 +143,7 @@ Model: cc/claude-opus-4-5-20251101
 
 ### Cho Mobile/Remote Coding
 
-- Dùng cloud deployment (https://9router.com)
+- Dùng cloud deployment (https://lina-router.com)
 - Truy cập từ iPad, điện thoại, mọi nơi
 - Không bị giới hạn localhost
 - Mạng Cloudflare edge (300+ vị trí)

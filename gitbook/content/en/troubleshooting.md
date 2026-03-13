@@ -143,7 +143,7 @@ Common issues and solutions when using 9Router.
 
 1. **Start 9Router:**
    ```bash
-   9router
+   lina-router
    ```
    Dashboard should open at http://localhost:3000
 
@@ -164,7 +164,7 @@ Common issues and solutions when using 9Router.
 4. **Use cloud endpoint:**
    If localhost doesn't work (e.g., Cursor IDE):
    ```
-   Endpoint: https://9router.com/v1
+   Endpoint: https://lina-router.com/v1
    ```
 
 ---
@@ -183,7 +183,7 @@ Common issues and solutions when using 9Router.
 1. **Check if 9Router is running:**
    ```bash
    # Check process
-   ps aux | grep 9router
+   ps aux | grep lina-router
    
    # Check port 3000
    lsof -i :3000
@@ -202,10 +202,10 @@ Common issues and solutions when using 9Router.
 3. **Restart 9Router:**
    ```bash
    # Stop
-   pkill -f 9router
+   pkill -f lina-router
    
    # Start
-   9router
+   lina-router
    ```
 
 4. **Clear browser cache:**
@@ -346,6 +346,6 @@ Common issues and solutions when using 9Router.
 
 ## Need More Help?
 
-- **GitHub Issues:** [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
-- **Documentation:** [9router.com/docs](https://9router.com/docs)
+- **GitHub Issues:** [github.com/decolua/lina-router/issues](https://github.com/decolua/lina-router/issues)
+- **Documentation:** [lina-router.com/docs](https://lina-router.com/docs)
 - **FAQ:** [faq.md](faq.md)
