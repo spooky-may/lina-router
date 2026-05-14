@@ -2,7 +2,8 @@ import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
-const OPTIONAL_FIELDS = [
+// Fields stored in the JSON blob column rather than dedicated columns
+const BLOB_TRACKED_FIELDS = [
   "displayName", "email", "globalPriority", "defaultModel",
   "accessToken", "refreshToken", "expiresAt", "tokenType",
   "scope", "projectId", "apiKey", "testStatus",
@@ -10,25 +11,27 @@ const OPTIONAL_FIELDS = [
   "consecutiveUseCount",
 ];
 
-function rowToConn(row) {
-  if (!row) return null;
-  const extra = parseJson(row.data, {});
+const CORE_COLUMNS = ["id", "provider", "authType", "name", "email", "priority", "isActive", "createdAt", "updatedAt"];
+
+function hydrate(rawRow) {
+  if (!rawRow) return null;
+  const extra = parseJson(rawRow.data, {});
   return {
     ...extra,
-    id: row.id,
-    provider: row.provider,
-    authType: row.authType,
-    name: row.name,
-    email: row.email,
-    priority: row.priority,
-    isActive: row.isActive === 1 || row.isActive === true,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
+    id: rawRow.id,
+    provider: rawRow.provider,
+    authType: rawRow.authType,
+    name: rawRow.name,
+    email: rawRow.email,
+    priority: rawRow.priority,
+    isActive: rawRow.isActive === 1 || rawRow.isActive === true,
+    createdAt: rawRow.createdAt,
+    updatedAt: rawRow.updatedAt,
   };
 }
 
-function connToRow(c) {
-  const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
+function dehydrate(entry) {
+  const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = entry;
   return {
     id,
     provider,
@@ -43,8 +46,8 @@ function connToRow(c) {
   };
 }
 
-function upsert(db, c) {
-  const r = connToRow(c);
+function persist(db, entry) {
+  const record = dehydrate(entry);
   db.run(
     `INSERT INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt)
      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -52,167 +55,174 @@ function upsert(db, c) {
        provider=excluded.provider, authType=excluded.authType, name=excluded.name,
        email=excluded.email, priority=excluded.priority, isActive=excluded.isActive,
        data=excluded.data, updatedAt=excluded.updatedAt`,
-    [r.id, r.provider, r.authType, r.name, r.email, r.priority, r.isActive, r.data, r.createdAt, r.updatedAt]
+    [record.id, record.provider, record.authType, record.name, record.email, record.priority, record.isActive, record.data, record.createdAt, record.updatedAt]
   );
 }
 
 export async function getProviderConnections(filter = {}) {
   const db = await getAdapter();
-  const where = [];
-  const params = [];
-  if (filter.provider) { where.push("provider = ?"); params.push(filter.provider); }
-  if (filter.isActive !== undefined) { where.push("isActive = ?"); params.push(filter.isActive ? 1 : 0); }
-  const sql = `SELECT * FROM providerConnections${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
-  const rows = db.all(sql, params);
-  const list = rows.map(rowToConn);
-  list.sort((a, b) => (a.priority || 999) - (b.priority || 999));
-  return list;
+  const conditions = [];
+  const bindings = [];
+  if (filter.provider) {
+    const clause = "provider = ?";
+    conditions.push(clause);
+    bindings.push(filter.provider);
+  }
+  if (filter.isActive !== undefined) {
+    const clause = "isActive = ?";
+    conditions.push(clause);
+    bindings.push(filter.isActive ? 1 : 0);
+  }
+  const sql = `SELECT * FROM providerConnections${conditions.length ? ` WHERE ${conditions.join(" AND ")}` : ""}`;
+  const results = db.all(sql, bindings).map(hydrate);
+  results.sort((x, y) => (x.priority || 999) - (y.priority || 999));
+  return results;
 }
 
 export async function getProviderConnectionById(id) {
   const db = await getAdapter();
-  const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
-  return rowToConn(row);
+  const rawRow = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
+  return hydrate(rawRow);
 }
 
-// Internal sync reorder — must be called INSIDE a transaction
-function reorderInTx(db, providerId) {
-  const list = db.all(`SELECT * FROM providerConnections WHERE provider = ?`, [providerId]).map(rowToConn);
-  list.sort((a, b) => {
-    const pDiff = (a.priority || 0) - (b.priority || 0);
-    if (pDiff !== 0) return pDiff;
-    return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
+// Reassign sequential priority values within a provider — must run inside a transaction
+function compactPriorities(db, providerId) {
+  const items = db.all(`SELECT * FROM providerConnections WHERE provider = ?`, [providerId]).map(hydrate);
+  items.sort((x, y) => {
+    const delta = (x.priority || 0) - (y.priority || 0);
+    if (delta !== 0) return delta;
+    return new Date(y.updatedAt || 0) - new Date(x.updatedAt || 0);
   });
-  list.forEach((c, i) => {
-    db.run(`UPDATE providerConnections SET priority = ? WHERE id = ?`, [i + 1, c.id]);
+  items.forEach((entry, i) => {
+    db.run(`UPDATE providerConnections SET priority = ? WHERE id = ?`, [i + 1, entry.id]);
   });
 }
 
 export async function createProviderConnection(data) {
   const db = await getAdapter();
   const now = new Date().toISOString();
-  let result;
+  let outcome;
 
   db.transaction(() => {
-    const all = db.all(`SELECT * FROM providerConnections WHERE provider = ?`, [data.provider]).map(rowToConn);
+    const existing = db.all(`SELECT * FROM providerConnections WHERE provider = ?`, [data.provider]).map(hydrate);
 
-    let existing = null;
+    let duplicate = null;
     if (data.authType === "oauth" && data.email) {
-      existing = all.find(c => c.authType === "oauth" && c.email === data.email);
+      duplicate = existing.find(entry => entry.authType === "oauth" && entry.email === data.email);
     } else if (data.authType === "apikey" && data.name) {
-      existing = all.find(c => c.authType === "apikey" && c.name === data.name);
+      duplicate = existing.find(entry => entry.authType === "apikey" && entry.name === data.name);
     }
 
-    if (existing) {
-      const merged = { ...existing, ...data, updatedAt: now };
-      upsert(db, merged);
-      result = merged;
+    if (duplicate) {
+      const merged = { ...duplicate, ...data, updatedAt: now };
+      persist(db, merged);
+      outcome = merged;
       return;
     }
 
-    let connectionName = data.name || null;
-    if (!connectionName && data.authType === "oauth") {
-      connectionName = data.email || `Account ${all.length + 1}`;
+    let resolvedName = data.name || null;
+    if (!resolvedName && data.authType === "oauth") {
+      resolvedName = data.email || `Account ${existing.length + 1}`;
     }
-    let connectionPriority = data.priority;
-    if (!connectionPriority) {
-      connectionPriority = all.reduce((m, c) => Math.max(m, c.priority || 0), 0) + 1;
+    let slotPriority = data.priority;
+    if (!slotPriority) {
+      slotPriority = existing.reduce((acc, entry) => Math.max(acc, entry.priority || 0), 0) + 1;
     }
 
-    const conn = {
+    const newEntry = {
       id: uuidv4(),
       provider: data.provider,
       authType: data.authType || "oauth",
-      name: connectionName,
-      priority: connectionPriority,
+      name: resolvedName,
+      priority: slotPriority,
       isActive: data.isActive !== undefined ? data.isActive : true,
       createdAt: now,
       updatedAt: now,
     };
-    for (const f of OPTIONAL_FIELDS) {
-      if (data[f] !== undefined && data[f] !== null) conn[f] = data[f];
+    for (const field of BLOB_TRACKED_FIELDS) {
+      if (data[field] !== undefined && data[field] !== null) newEntry[field] = data[field];
     }
     if (data.providerSpecificData && Object.keys(data.providerSpecificData).length > 0) {
-      conn.providerSpecificData = data.providerSpecificData;
+      newEntry.providerSpecificData = data.providerSpecificData;
     }
-    if (data.email !== undefined) conn.email = data.email;
+    if (data.email !== undefined) newEntry.email = data.email;
 
-    upsert(db, conn);
-    reorderInTx(db, data.provider);
-    result = conn;
+    persist(db, newEntry);
+    compactPriorities(db, data.provider);
+    outcome = newEntry;
   });
 
-  return result;
+  return outcome;
 }
 
-// Critical: OAuth refresh token race — atomic merge inside transaction
+// Atomic merge to prevent OAuth refresh token race conditions
 export async function updateProviderConnection(id, data) {
   const db = await getAdapter();
-  let result;
+  let outcome;
   db.transaction(() => {
-    const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
-    if (!row) { result = null; return; }
-    const existing = rowToConn(row);
-    const merged = { ...existing, ...data, updatedAt: new Date().toISOString() };
-    upsert(db, merged);
-    if (data.priority !== undefined) reorderInTx(db, existing.provider);
-    result = merged;
+    const rawRow = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
+    if (!rawRow) { outcome = null; return; }
+    const current = hydrate(rawRow);
+    const merged = { ...current, ...data, updatedAt: new Date().toISOString() };
+    persist(db, merged);
+    if (data.priority !== undefined) compactPriorities(db, current.provider);
+    outcome = merged;
   });
-  return result;
+  return outcome;
 }
 
 export async function deleteProviderConnection(id) {
   const db = await getAdapter();
-  let ok = false;
+  let removed = false;
   db.transaction(() => {
-    const row = db.get(`SELECT provider FROM providerConnections WHERE id = ?`, [id]);
-    if (!row) return;
+    const rawRow = db.get(`SELECT provider FROM providerConnections WHERE id = ?`, [id]);
+    if (!rawRow) return;
     db.run(`DELETE FROM providerConnections WHERE id = ?`, [id]);
-    reorderInTx(db, row.provider);
-    ok = true;
+    compactPriorities(db, rawRow.provider);
+    removed = true;
   });
-  return ok;
+  return removed;
 }
 
 export async function deleteProviderConnectionsByProvider(providerId) {
   const db = await getAdapter();
-  const before = db.get(`SELECT COUNT(*) AS n FROM providerConnections WHERE provider = ?`, [providerId]);
+  const countRow = db.get(`SELECT COUNT(*) AS n FROM providerConnections WHERE provider = ?`, [providerId]);
   db.run(`DELETE FROM providerConnections WHERE provider = ?`, [providerId]);
-  return before?.n || 0;
+  return countRow?.n || 0;
 }
 
 export async function reorderProviderConnections(providerId) {
   const db = await getAdapter();
-  db.transaction(() => reorderInTx(db, providerId));
+  db.transaction(() => compactPriorities(db, providerId));
 }
 
 export async function cleanupProviderConnections() {
   const db = await getAdapter();
-  const fieldsToCheck = [
+  const nullableFields = [
     "displayName", "email", "globalPriority", "defaultModel",
     "accessToken", "refreshToken", "expiresAt", "tokenType",
     "scope", "projectId", "apiKey", "testStatus",
     "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn",
     "consecutiveUseCount",
   ];
-  let cleaned = 0;
+  let totalCleaned = 0;
   db.transaction(() => {
-    const rows = db.all(`SELECT * FROM providerConnections`);
-    for (const row of rows) {
-      const conn = rowToConn(row);
-      let dirty = false;
-      for (const f of fieldsToCheck) {
-        if (conn[f] === null || conn[f] === undefined) {
-          if (f in conn) { delete conn[f]; cleaned++; dirty = true; }
+    const allRows = db.all(`SELECT * FROM providerConnections`);
+    for (const rawRow of allRows) {
+      const entry = hydrate(rawRow);
+      let needsWrite = false;
+      for (const field of nullableFields) {
+        if (entry[field] === null || entry[field] === undefined) {
+          if (field in entry) { delete entry[field]; totalCleaned++; needsWrite = true; }
         }
       }
-      if (conn.providerSpecificData && Object.keys(conn.providerSpecificData).length === 0) {
-        delete conn.providerSpecificData;
-        cleaned++;
-        dirty = true;
+      if (entry.providerSpecificData && Object.keys(entry.providerSpecificData).length === 0) {
+        delete entry.providerSpecificData;
+        totalCleaned++;
+        needsWrite = true;
       }
-      if (dirty) upsert(db, conn);
+      if (needsWrite) persist(db, entry);
     }
   });
-  return cleaned;
+  return totalCleaned;
 }

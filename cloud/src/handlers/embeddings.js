@@ -13,273 +13,289 @@ import * as log from "../utils/logger.js";
 import { parseApiKey, extractBearerToken } from "../utils/apiKey.js";
 import { getMachineData, saveMachineData } from "../services/storage.js";
 
+// Preflight handler shared across routes — returns permissive CORS headers.
+function preflight() {
+  return new Response(null, {
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "*"
+    }
+  });
+}
+
 /**
- * Handle POST /v1/embeddings and /{machineId}/v1/embeddings requests.
+ * POST /v1/embeddings  (and legacy /{deviceId}/v1/embeddings)
  *
- * Follows the same auth + fallback pattern as handleChat:
- *  1. Resolve machineId (from URL or API key)
- *  2. Validate API key
- *  3. Parse model → provider/model
- *  4. Get provider credentials with fallback loop
- *  5. Delegate to handleEmbeddingsCore (open-sse)
+ * Steps:
+ *   1. Resolve deviceId from the URL override or from the bearer token.
+ *   2. Confirm the bearer token is valid for this device.
+ *   3. Decode the request body and validate required fields.
+ *   4. Look up model metadata and map to a provider + model slug.
+ *   5. Run the provider-credential fallback loop, delegating to handleEmbeddingsCore.
  *
- * @param {Request} request
- * @param {object} env - Cloudflare env bindings
- * @param {object} ctx - Execution context
- * @param {string|null} machineIdOverride - From URL path (old format), or null (new format)
+ * @param {Request} req
+ * @param {object} env   - Cloudflare Worker environment bindings
+ * @param {object} ctx   - Execution context (waitUntil, etc.)
+ * @param {string|null} deviceIdFromPath - Pre-extracted device ID from URL, or null
  */
-export async function handleEmbeddings(request, env, ctx, machineIdOverride = null) {
-  if (request.method === "OPTIONS") {
-    return new Response(null, {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "*"
-      }
-    });
-  }
+export async function handleEmbeddings(req, env, ctx, deviceIdFromPath = null) {
+  if (req.method === "OPTIONS") return preflight();
 
-  // Resolve machineId
-  let machineId = machineIdOverride;
+  // Determine the device/machine ID we're acting on behalf of.
+  let deviceId = deviceIdFromPath;
 
-  if (!machineId) {
-    const apiKey = extractBearerToken(request);
-    if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
+  if (!deviceId) {
+    const rawToken = extractBearerToken(req);
+    if (!rawToken) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
 
-    const parsed = await parseApiKey(apiKey);
-    if (!parsed) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key format");
+    const tokenParts = await parseApiKey(rawToken);
+    if (!tokenParts) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key format");
 
-    if (!parsed.isNewFormat || !parsed.machineId) {
+    if (!tokenParts.isNewFormat || !tokenParts.machineId) {
       return errorResponse(
         HTTP_STATUS.BAD_REQUEST,
         "API key does not contain machineId. Use /{machineId}/v1/... endpoint for old format keys."
       );
     }
-    machineId = parsed.machineId;
+    deviceId = tokenParts.machineId;
   }
 
-  // Validate API key
-  if (!await validateApiKey(request, machineId, env)) {
-    return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-  }
+  // Reject requests whose token does not match the device record.
+  const tokenOk = await verifyToken(req, deviceId, env);
+  if (!tokenOk) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
 
-  // Parse body
-  let body;
+  // Deserialize request payload.
+  let payload;
   try {
-    body = await request.json();
+    payload = await req.json();
   } catch {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
   }
 
-  const modelStr = body.model;
-  if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+  const requestedModel = payload.model;
+  if (!requestedModel) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+  if (!payload.input) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
 
-  if (!body.input) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
+  log.info("EMBEDDINGS", `${deviceId} | ${requestedModel}`);
 
-  log.info("EMBEDDINGS", `${machineId} | ${modelStr}`);
+  // Map the model string to a provider + canonical model slug.
+  const deviceRecord = await getMachineData(deviceId, env);
+  const resolvedModel = await getModelInfoCore(requestedModel, deviceRecord?.modelAliases || {});
+  if (!resolvedModel.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
-  // Resolve model info
-  const data = await getMachineData(machineId, env);
-  const modelInfo = await getModelInfoCore(modelStr, data?.modelAliases || {});
-  if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
+  const { provider: targetProvider, model: targetModel } = resolvedModel;
+  log.info("EMBEDDINGS_MODEL", `${targetProvider.toUpperCase()} | ${targetModel}`);
 
-  const { provider, model } = modelInfo;
-  log.info("EMBEDDINGS_MODEL", `${provider.toUpperCase()} | ${model}`);
+  // Fallback loop: try accounts in priority order, skipping unavailable ones.
+  let skippedAccountId = null;
+  let previousError = null;
+  let previousStatus = null;
 
-  // Provider credential + fallback loop (mirrors handleChat)
-  let excludeConnectionId = null;
-  let lastError = null;
-  let lastStatus = null;
+  for (;;) {
+    const account = await pickAccount(deviceId, targetProvider, env, skippedAccountId);
 
-  while (true) {
-    const credentials = await getProviderCredentials(machineId, provider, env, excludeConnectionId);
-
-    if (!credentials || credentials.allRateLimited) {
-      if (credentials?.allRateLimited) {
-        const retryAfterSec = Math.ceil(
-          (new Date(credentials.retryAfter).getTime() - Date.now()) / 1000
+    if (!account || account.allRateLimited) {
+      if (account?.allRateLimited) {
+        const secsUntilRetry = Math.ceil(
+          (new Date(account.retryAfter).getTime() - Date.now()) / 1000
         );
-        const errorMsg = lastError || credentials.lastError || "Unavailable";
-        const msg = `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`;
-        const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
-        log.warn("EMBEDDINGS", `${provider.toUpperCase()} | ${msg}`);
+        const errorDetail = previousError || account.lastError || "Unavailable";
+        const message = `[${targetProvider}/${targetModel}] ${errorDetail} (${account.retryAfterHuman})`;
+        const httpCode = previousStatus || Number(account.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
+        log.warn("EMBEDDINGS", `${targetProvider.toUpperCase()} | ${message}`);
         return new Response(
-          JSON.stringify({ error: { message: msg } }),
+          JSON.stringify({ error: { message } }),
           {
-            status,
+            status: httpCode,
             headers: {
               "Content-Type": "application/json",
-              "Retry-After": String(Math.max(retryAfterSec, 1))
+              "Retry-After": String(Math.max(secsUntilRetry, 1))
             }
           }
         );
       }
-      if (!excludeConnectionId) {
-        return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
+
+      if (!skippedAccountId) {
+        return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${targetProvider}`);
       }
-      log.warn("EMBEDDINGS", `${provider.toUpperCase()} | no more accounts`);
+
+      log.warn("EMBEDDINGS", `${targetProvider.toUpperCase()} | no more accounts`);
       return new Response(
-        JSON.stringify({ error: lastError || "All accounts unavailable" }),
+        JSON.stringify({ error: previousError || "All accounts unavailable" }),
         {
-          status: lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE,
+          status: previousStatus || HTTP_STATUS.SERVICE_UNAVAILABLE,
           headers: { "Content-Type": "application/json" }
         }
       );
     }
 
-    log.debug("EMBEDDINGS", `account=${credentials.id}`, { provider });
+    log.debug("EMBEDDINGS", `account=${account.id}`, { provider: targetProvider });
 
-    const result = await handleEmbeddingsCore({
-      body,
-      modelInfo: { provider, model },
-      credentials,
+    const outcome = await handleEmbeddingsCore({
+      body: payload,
+      modelInfo: { provider: targetProvider, model: targetModel },
+      credentials: account,
       log,
-      onCredentialsRefreshed: async (newCreds) => {
-        await updateCredentials(machineId, credentials.id, newCreds, env);
+      onCredentialsRefreshed: async (refreshed) => {
+        await persistTokenUpdate(deviceId, account.id, refreshed, env);
       },
       onRequestSuccess: async () => {
-        await clearAccountError(machineId, credentials.id, credentials, env);
+        await resetAccountErrors(deviceId, account.id, account, env);
       }
     });
 
-    if (result.success) return result.response;
+    if (outcome.success) return outcome.response;
 
-    const { shouldFallback } = checkFallbackError(result.status, result.error);
+    const { shouldFallback } = checkFallbackError(outcome.status, outcome.error);
 
     if (shouldFallback) {
-      log.warn("EMBEDDINGS_FALLBACK", `${provider.toUpperCase()} | ${credentials.id} | ${result.status}`);
-      await markAccountUnavailable(machineId, credentials.id, result.status, result.error, env);
-      excludeConnectionId = credentials.id;
-      lastError = result.error;
-      lastStatus = result.status;
+      log.warn("EMBEDDINGS_FALLBACK", `${targetProvider.toUpperCase()} | ${account.id} | ${outcome.status}`);
+      await banAccount(deviceId, account.id, outcome.status, outcome.error, env);
+      skippedAccountId = account.id;
+      previousError = outcome.error;
+      previousStatus = outcome.status;
       continue;
     }
 
-    return result.response;
+    return outcome.response;
   }
 }
 
-// ─── Helpers (same as chat.js) ───────────────────────────────────────────────
+// ─── Private helpers ─────────────────────────────────────────────────────────
 
-async function validateApiKey(request, machineId, env) {
-  const authHeader = request.headers.get("Authorization");
+// Checks that the bearer token in the request matches one stored for this device.
+async function verifyToken(req, deviceId, env) {
+  const authHeader = req.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) return false;
 
-  const apiKey = authHeader.slice(7);
-  const data = await getMachineData(machineId, env);
-  return data?.apiKeys?.some(k => k.key === apiKey) || false;
+  const suppliedKey = authHeader.slice(7);
+  const record = await getMachineData(deviceId, env);
+  return record?.apiKeys?.some(entry => entry.key === suppliedKey) || false;
 }
 
-async function getProviderCredentials(machineId, provider, env, excludeConnectionId = null) {
-  const data = await getMachineData(machineId, env);
-  if (!data?.providers) return null;
+// Returns the highest-priority available account for a given provider,
+// or a sentinel object describing a rate-limited state if all accounts are blocked.
+async function pickAccount(deviceId, provider, env, skipId = null) {
+  const record = await getMachineData(deviceId, env);
+  if (!record?.providers) return null;
 
-  const providerConnections = Object.entries(data.providers)
-    .filter(([connId, conn]) => {
+  const eligible = Object.entries(record.providers)
+    .filter(([id, conn]) => {
       if (conn.provider !== provider || !conn.isActive) return false;
-      if (excludeConnectionId && connId === excludeConnectionId) return false;
+      if (skipId && id === skipId) return false;
       if (isAccountUnavailable(conn.rateLimitedUntil)) return false;
       return true;
     })
     .sort((a, b) => (a[1].priority || 999) - (b[1].priority || 999));
 
-  if (providerConnections.length === 0) {
-    const allConnections = Object.entries(data.providers)
-      .filter(([, conn]) => conn.provider === provider && conn.isActive)
-      .map(([, conn]) => conn);
-    const earliest = getEarliestRateLimitedUntil(allConnections);
-    if (earliest) {
-      const rateLimitedConns = allConnections.filter(
-        c => c.rateLimitedUntil && new Date(c.rateLimitedUntil).getTime() > Date.now()
-      );
-      const earliestConn = rateLimitedConns.sort(
-        (a, b) => new Date(a.rateLimitedUntil) - new Date(b.rateLimitedUntil)
-      )[0];
-      return {
-        allRateLimited: true,
-        retryAfter: earliest,
-        retryAfterHuman: formatRetryAfter(earliest),
-        lastError: earliestConn?.lastError || null,
-        lastErrorCode: earliestConn?.errorCode || null
-      };
-    }
-    return null;
+  if (eligible.length > 0) {
+    const [chosenId, chosenConn] = eligible[0];
+    return {
+      id: chosenId,
+      apiKey: chosenConn.apiKey,
+      accessToken: chosenConn.accessToken,
+      refreshToken: chosenConn.refreshToken,
+      expiresAt: chosenConn.expiresAt,
+      projectId: chosenConn.projectId,
+      providerSpecificData: chosenConn.providerSpecificData,
+      status: chosenConn.status,
+      lastError: chosenConn.lastError,
+      rateLimitedUntil: chosenConn.rateLimitedUntil
+    };
   }
 
-  const [connectionId, connection] = providerConnections[0];
+  // No eligible accounts — check if they're all rate-limited (vs. simply absent).
+  const allForProvider = Object.entries(record.providers)
+    .filter(([, conn]) => conn.provider === provider && conn.isActive)
+    .map(([, conn]) => conn);
+
+  const soonestUnlock = getEarliestRateLimitedUntil(allForProvider);
+  if (!soonestUnlock) return null;
+
+  const blocked = allForProvider.filter(
+    c => c.rateLimitedUntil && new Date(c.rateLimitedUntil).getTime() > Date.now()
+  );
+  const soonest = blocked.sort(
+    (a, b) => new Date(a.rateLimitedUntil) - new Date(b.rateLimitedUntil)
+  )[0];
+
   return {
-    id: connectionId,
-    apiKey: connection.apiKey,
-    accessToken: connection.accessToken,
-    refreshToken: connection.refreshToken,
-    expiresAt: connection.expiresAt,
-    projectId: connection.projectId,
-    providerSpecificData: connection.providerSpecificData,
-    status: connection.status,
-    lastError: connection.lastError,
-    rateLimitedUntil: connection.rateLimitedUntil
+    allRateLimited: true,
+    retryAfter: soonestUnlock,
+    retryAfterHuman: formatRetryAfter(soonestUnlock),
+    lastError: soonest?.lastError || null,
+    lastErrorCode: soonest?.errorCode || null
   };
 }
 
-async function markAccountUnavailable(machineId, connectionId, status, errorText, env) {
-  const data = await getMachineData(machineId, env);
-  if (!data?.providers?.[connectionId]) return;
+// Marks a connection as temporarily unavailable after a failed request,
+// applying exponential backoff via backoffLevel.
+async function banAccount(deviceId, connId, statusCode, errDetail, env) {
+  const record = await getMachineData(deviceId, env);
+  if (!record?.providers?.[connId]) return;
 
-  const conn = data.providers[connectionId];
-  const backoffLevel = conn.backoffLevel || 0;
-  const { cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel);
-  const rateLimitedUntil = getUnavailableUntil(cooldownMs);
-  const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
+  const existing = record.providers[connId];
+  const currentBackoff = existing.backoffLevel || 0;
+  const { cooldownMs, newBackoffLevel } = checkFallbackError(statusCode, errDetail, currentBackoff);
+  const blockedUntil = getUnavailableUntil(cooldownMs);
+  const truncatedReason = typeof errDetail === "string" ? errDetail.slice(0, 100) : "Provider error";
+  const now = new Date().toISOString();
 
-  data.providers[connectionId].rateLimitedUntil = rateLimitedUntil;
-  data.providers[connectionId].status = "unavailable";
-  data.providers[connectionId].lastError = reason;
-  data.providers[connectionId].errorCode = status || null;
-  data.providers[connectionId].lastErrorAt = new Date().toISOString();
-  data.providers[connectionId].backoffLevel = newBackoffLevel ?? backoffLevel;
-  data.providers[connectionId].updatedAt = new Date().toISOString();
+  record.providers[connId].rateLimitedUntil = blockedUntil;
+  record.providers[connId].status = "unavailable";
+  record.providers[connId].lastError = truncatedReason;
+  record.providers[connId].errorCode = statusCode || null;
+  record.providers[connId].lastErrorAt = now;
+  record.providers[connId].backoffLevel = newBackoffLevel ?? currentBackoff;
+  record.providers[connId].updatedAt = now;
 
-  await saveMachineData(machineId, data, env);
-  log.warn("EMBEDDINGS_ACCOUNT", `${connectionId} | unavailable until ${rateLimitedUntil}`);
+  await saveMachineData(deviceId, record, env);
+  log.warn("EMBEDDINGS_ACCOUNT", `${connId} | unavailable until ${blockedUntil}`);
 }
 
-async function clearAccountError(machineId, connectionId, currentCredentials, env) {
-  const hasError =
-    currentCredentials.status === "unavailable" ||
-    currentCredentials.lastError ||
-    currentCredentials.rateLimitedUntil;
+// Clears any error / rate-limit state from a connection after a successful call.
+async function resetAccountErrors(deviceId, connId, snapshot, env) {
+  const needsReset =
+    snapshot.status === "unavailable" ||
+    snapshot.lastError ||
+    snapshot.rateLimitedUntil;
 
-  if (!hasError) return;
+  if (!needsReset) return;
 
-  const data = await getMachineData(machineId, env);
-  if (!data?.providers?.[connectionId]) return;
+  const record = await getMachineData(deviceId, env);
+  if (!record?.providers?.[connId]) return;
 
-  data.providers[connectionId].status = "active";
-  data.providers[connectionId].lastError = null;
-  data.providers[connectionId].lastErrorAt = null;
-  data.providers[connectionId].rateLimitedUntil = null;
-  data.providers[connectionId].backoffLevel = 0;
-  data.providers[connectionId].updatedAt = new Date().toISOString();
+  record.providers[connId].status = "active";
+  record.providers[connId].lastError = null;
+  record.providers[connId].lastErrorAt = null;
+  record.providers[connId].rateLimitedUntil = null;
+  record.providers[connId].backoffLevel = 0;
+  record.providers[connId].updatedAt = new Date().toISOString();
 
-  await saveMachineData(machineId, data, env);
-  log.info("EMBEDDINGS_ACCOUNT", `${connectionId} | error cleared`);
+  await saveMachineData(deviceId, record, env);
+  log.info("EMBEDDINGS_ACCOUNT", `${connId} | error cleared`);
 }
 
-async function updateCredentials(machineId, connectionId, newCredentials, env) {
-  const data = await getMachineData(machineId, env);
-  if (!data?.providers?.[connectionId]) return;
+// Persists refreshed OAuth tokens back to the device record.
+async function persistTokenUpdate(deviceId, connId, freshCreds, env) {
+  const record = await getMachineData(deviceId, env);
+  if (!record?.providers?.[connId]) return;
 
-  data.providers[connectionId].accessToken = newCredentials.accessToken;
-  if (newCredentials.refreshToken)
-    data.providers[connectionId].refreshToken = newCredentials.refreshToken;
-  if (newCredentials.expiresIn) {
-    data.providers[connectionId].expiresAt = new Date(
-      Date.now() + newCredentials.expiresIn * 1000
+  record.providers[connId].accessToken = freshCreds.accessToken;
+
+  if (freshCreds.refreshToken)
+    record.providers[connId].refreshToken = freshCreds.refreshToken;
+
+  if (freshCreds.expiresIn) {
+    record.providers[connId].expiresAt = new Date(
+      Date.now() + freshCreds.expiresIn * 1000
     ).toISOString();
-    data.providers[connectionId].expiresIn = newCredentials.expiresIn;
+    record.providers[connId].expiresIn = freshCreds.expiresIn;
   }
-  data.providers[connectionId].updatedAt = new Date().toISOString();
 
-  await saveMachineData(machineId, data, env);
-  log.debug("EMBEDDINGS_TOKEN", `credentials updated | ${connectionId}`);
+  record.providers[connId].updatedAt = new Date().toISOString();
+
+  await saveMachineData(deviceId, record, env);
+  log.debug("EMBEDDINGS_TOKEN", `credentials updated | ${connId}`);
 }
