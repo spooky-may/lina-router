@@ -6,7 +6,7 @@ Create custom model combinations with automatic fallback. Combos let you define 
 
 ## What Are Combos?
 
-Combos are **custom fallback chains** that you create in the dashboard. Instead of using a single model, you define a sequence of models that 9Router tries in order.
+Combos are **custom fallback chains** that you create in the dashboard. Instead of using a single model, you define a sequence of models that LINA Router tries in order.
 
 **Example:**
 ```
@@ -22,7 +22,7 @@ Models:
 Model: premium-coding
 ```
 
-9Router automatically tries each model in sequence until one succeeds.
+LINA Router automatically tries each model in sequence until one succeeds.
 
 ---
 
@@ -480,7 +480,7 @@ Dashboard → Combos → Edit → Budget:
   Monthly limit: $50
 ```
 
-When limit reached, 9Router skips paid models and uses free tier only.
+When limit reached, LINA Router skips paid models and uses free tier only.
 
 ### Enable/Disable Models in Combo
 

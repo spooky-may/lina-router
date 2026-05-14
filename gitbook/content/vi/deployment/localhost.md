@@ -1,12 +1,12 @@
 # 🏠 Triển khai Localhost
 
-Chạy 9Router trên máy cá nhân để phát triển và dùng cá nhân.
+Chạy LINA Router trên máy cá nhân để phát triển và dùng cá nhân.
 
 ---
 
 ## 📦 Cài đặt
 
-Cài đặt 9Router toàn cục qua npm:
+Cài đặt LINA Router toàn cục qua npm:
 
 ```bash
 npm install -g lina-router
@@ -20,7 +20,7 @@ npm install -g lina-router
 
 ## 🚀 Khởi động Server
 
-Khởi động 9Router với một lệnh duy nhất:
+Khởi động LINA Router với một lệnh duy nhất:
 
 ```bash
 lina-router
@@ -53,7 +53,7 @@ Port API (20128) và port dashboard (3000) được cấu hình trong applicatio
 
 ## 🛑 Dừng Server
 
-Nhấn `Ctrl+C` trong terminal đang chạy 9Router.
+Nhấn `Ctrl+C` trong terminal đang chạy LINA Router.
 
 ```bash
 # In the terminal running lina-router
@@ -76,7 +76,7 @@ Mọi cấu hình, API keys và combos được giữ lại trong thư mục dat
 
 ---
 
-## 📊 Cập nhật 9Router
+## 📊 Cập nhật LINA Router
 
 Cập nhật phiên bản mới nhất:
 

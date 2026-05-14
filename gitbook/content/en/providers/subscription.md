@@ -316,7 +316,7 @@ Use in CLI: premium-coding
 
 ## Quota Tracking
 
-9Router tracks quota in real-time:
+LINA Router tracks quota in real-time:
 
 - **Token consumption** - Input/output tokens per request
 - **Reset countdown** - Time until next quota reset
@@ -385,7 +385,7 @@ Night: Cheap/free tier
 ### "OAuth token expired"
 
 **Solution:**
-- Auto-refreshed by 9Router
+- Auto-refreshed by LINA Router
 - If issues: Dashboard → Provider → Reconnect
 
 ### "Rate limiting"

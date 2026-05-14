@@ -1,6 +1,6 @@
 # トラブルシューティング
 
-9Router利用時の一般的な問題と解決策。
+LINA Router利用時の一般的な問題と解決策。
 
 ---
 
@@ -78,7 +78,7 @@
 **解決策:**
 
 1. **自動更新(デフォルト):**
-   9Routerは自動的にトークンを更新します。30秒待ってから再試行。
+   LINA Routerは自動的にトークンを更新します。30秒待ってから再試行。
 
 2. **手動で再接続:**
    ```
@@ -135,13 +135,13 @@
 **問題:** 「ECONNREFUSED」または「Cannot connect to localhost:20128」。
 
 **原因:**
-- 9Routerが起動していない
+- LINA Routerが起動していない
 - ポート20128がブロックされている
 - ファイアウォールが接続をブロック
 
 **解決策:**
 
-1. **9Routerを起動:**
+1. **LINA Routerを起動:**
    ```bash
    lina-router
    ```
@@ -175,12 +175,12 @@
 
 **原因:**
 - ポート3000がすでに使用中
-- 9Routerがクラッシュした
+- LINA Routerがクラッシュした
 - ブラウザキャッシュの問題
 
 **解決策:**
 
-1. **9Routerが実行中か確認:**
+1. **LINA Routerが実行中か確認:**
    ```bash
    # プロセスを確認
    ps aux | grep lina-router
@@ -199,7 +199,7 @@
    taskkill /PID <PID> /F
    ```
 
-3. **9Routerを再起動:**
+3. **LINA Routerを再起動:**
    ```bash
    # 停止
    pkill -f lina-router

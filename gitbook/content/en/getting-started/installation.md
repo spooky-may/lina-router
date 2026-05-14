@@ -1,6 +1,6 @@
 # Installation
 
-Detailed installation guide for 9Router with troubleshooting tips.
+Detailed installation guide for LINA Router with troubleshooting tips.
 
 ---
 
@@ -31,13 +31,13 @@ npm --version
 
 ### Method 1: Global Installation (Recommended)
 
-Install 9Router globally to use from anywhere:
+Install LINA Router globally to use from anywhere:
 
 ```bash
 npm install -g lina-router
 ```
 
-**Start 9Router:**
+**Start LINA Router:**
 
 ```bash
 lina-router
@@ -58,7 +58,7 @@ cd my-lina-router
 npm install lina-router
 ```
 
-**Start 9Router:**
+**Start LINA Router:**
 
 ```bash
 npx lina-router
@@ -345,7 +345,7 @@ Dashboard → Provider → Disconnect → Reconnect
 
 ### High Memory Usage
 
-**Issue:** 9Router using too much RAM
+**Issue:** LINA Router using too much RAM
 
 **Solution: Restart server**
 

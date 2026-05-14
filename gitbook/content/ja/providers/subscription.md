@@ -316,7 +316,7 @@ CLIで使用: premium-coding
 
 ## クォータトラッキング
 
-9Routerはクォータをリアルタイムで追跡:
+LINA Routerはクォータをリアルタイムで追跡:
 
 - **トークン消費** - リクエストごとの入出力トークン
 - **リセットカウントダウン** - 次のクォータリセットまでの時間
@@ -385,7 +385,7 @@ Claude Code Pro
 ### 「OAuthトークン期限切れ」
 
 **解決策:**
-- 9Routerにより自動更新
+- LINA Routerにより自動更新
 - 問題がある場合: Dashboard → Provider → Reconnect
 
 ### 「レート制限」

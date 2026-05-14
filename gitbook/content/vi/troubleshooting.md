@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Các vấn đề và giải pháp phổ biến khi dùng 9Router.
+Các vấn đề và giải pháp phổ biến khi dùng LINA Router.
 
 ---
 
@@ -78,7 +78,7 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Giải pháp:**
 
 1. **Auto-refresh (mặc định):**
-   9Router tự refresh tokens. Đợi 30 giây rồi thử lại.
+   LINA Router tự refresh tokens. Đợi 30 giây rồi thử lại.
 
 2. **Kết nối lại thủ công:**
    ```
@@ -135,13 +135,13 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Vấn đề:** Lỗi "ECONNREFUSED" hoặc "Cannot connect to localhost:20128".
 
 **Nguyên nhân:**
-- 9Router không chạy
+- LINA Router không chạy
 - Port 20128 bị chặn
 - Firewall chặn kết nối
 
 **Giải pháp:**
 
-1. **Khởi động 9Router:**
+1. **Khởi động LINA Router:**
    ```bash
    lina-router
    ```
@@ -175,12 +175,12 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 
 **Nguyên nhân:**
 - Port 3000 đã được dùng
-- 9Router bị crash
+- LINA Router bị crash
 - Vấn đề cache browser
 
 **Giải pháp:**
 
-1. **Kiểm tra 9Router có chạy không:**
+1. **Kiểm tra LINA Router có chạy không:**
    ```bash
    # Check process
    ps aux | grep lina-router
@@ -199,7 +199,7 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
    taskkill /PID <PID> /F
    ```
 
-3. **Khởi động lại 9Router:**
+3. **Khởi động lại LINA Router:**
    ```bash
    # Stop
    pkill -f lina-router

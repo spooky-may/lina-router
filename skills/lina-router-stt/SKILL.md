@@ -1,9 +1,9 @@
 ---
 name: lina-router-stt
-description: Speech-to-text via 9Router /v1/audio/transcriptions using OpenAI Whisper / Groq / Gemini / Deepgram / AssemblyAI / NVIDIA / HuggingFace models. Use when the user wants to transcribe audio, convert speech to text, or get subtitles from audio files.
+description: Speech-to-text via LINA Router /v1/audio/transcriptions using OpenAI Whisper / Groq / Gemini / Deepgram / AssemblyAI / NVIDIA / HuggingFace models. Use when the user wants to transcribe audio, convert speech to text, or get subtitles from audio files.
 ---
 
-# 9Router — Speech-to-Text
+# LINA Router — Speech-to-Text
 
 Requires `NINEROUTER_URL` (and `NINEROUTER_KEY` if auth enabled). See https://raw.githubusercontent.com/decolua/lina-router/refs/heads/master/skills/lina-router/SKILL.md for setup.
 

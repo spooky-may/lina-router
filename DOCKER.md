@@ -1,6 +1,6 @@
 # Docker
 
-This project ships with a `Dockerfile` for building and running 9Router in a container.
+This project ships with a `Dockerfile` for building and running LINA Router in a container.
 
 ## Build image
 

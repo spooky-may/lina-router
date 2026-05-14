@@ -45,7 +45,7 @@ Dashboard → API Keys → Create New
 → APIキーをコピー ("zhipu-"で始まる)
 ```
 
-**ステップ3: 9Routerに追加**
+**ステップ3: LINA Routerに追加**
 
 ```bash
 lina-router
@@ -117,7 +117,7 @@ Dashboard → API Management → Create Key
 → APIキーをコピー
 ```
 
-**ステップ3: 9Routerに追加**
+**ステップ3: LINA Routerに追加**
 
 ```bash
 lina-router
@@ -190,7 +190,7 @@ Dashboard → API Keys → Create New
 → APIキーをコピー
 ```
 
-**ステップ3: 9Routerに追加**
+**ステップ3: LINA Routerに追加**
 
 ```bash
 lina-router

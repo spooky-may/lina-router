@@ -1,6 +1,6 @@
 # インストール
 
-トラブルシューティングのヒント付きの9Router詳細インストールガイド。
+トラブルシューティングのヒント付きのLINA Router詳細インストールガイド。
 
 ---
 
@@ -31,13 +31,13 @@ npm --version
 
 ### 方法1: グローバルインストール (推奨)
 
-どこからでも使用できるように9Routerをグローバルインストール:
+どこからでも使用できるようにLINA Routerをグローバルインストール:
 
 ```bash
 npm install -g lina-router
 ```
 
-**9Routerを起動:**
+**LINA Routerを起動:**
 
 ```bash
 lina-router
@@ -58,7 +58,7 @@ cd my-lina-router
 npm install lina-router
 ```
 
-**9Routerを起動:**
+**LINA Routerを起動:**
 
 ```bash
 npx lina-router
@@ -345,7 +345,7 @@ Dashboard → Provider → Disconnect → Reconnect
 
 ### 高メモリ使用量
 
-**問題:** 9RouterがRAMを使いすぎている
+**問題:** LINA RouterがRAMを使いすぎている
 
 **解決策: サーバーを再起動**
 

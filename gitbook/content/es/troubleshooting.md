@@ -1,6 +1,6 @@
 # Solución de problemas
 
-Problemas comunes y soluciones al usar 9Router.
+Problemas comunes y soluciones al usar LINA Router.
 
 ---
 
@@ -78,7 +78,7 @@ Problemas comunes y soluciones al usar 9Router.
 **Soluciones:**
 
 1. **Refresh automático (por defecto):**
-   9Router refresca automáticamente los tokens. Espera 30 segundos y reintenta.
+   LINA Router refresca automáticamente los tokens. Espera 30 segundos y reintenta.
 
 2. **Reconexión manual:**
    ```
@@ -135,13 +135,13 @@ Problemas comunes y soluciones al usar 9Router.
 **Problema:** "ECONNREFUSED" o "Cannot connect to localhost:20128".
 
 **Causas:**
-- 9Router no está ejecutándose
+- LINA Router no está ejecutándose
 - Puerto 20128 bloqueado
 - Firewall bloqueando la conexión
 
 **Soluciones:**
 
-1. **Inicia 9Router:**
+1. **Inicia LINA Router:**
    ```bash
    lina-router
    ```
@@ -175,12 +175,12 @@ Problemas comunes y soluciones al usar 9Router.
 
 **Causas:**
 - Puerto 3000 ya en uso
-- 9Router crasheó
+- LINA Router crasheó
 - Problemas de caché del navegador
 
 **Soluciones:**
 
-1. **Verifica si 9Router está ejecutándose:**
+1. **Verifica si LINA Router está ejecutándose:**
    ```bash
    # Verifica el proceso
    ps aux | grep lina-router
@@ -199,7 +199,7 @@ Problemas comunes y soluciones al usar 9Router.
    taskkill /PID <PID> /F
    ```
 
-3. **Reinicia 9Router:**
+3. **Reinicia LINA Router:**
    ```bash
    # Detener
    pkill -f lina-router

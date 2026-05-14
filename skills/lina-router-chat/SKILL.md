@@ -1,9 +1,9 @@
 ---
 name: lina-router-chat
-description: Chat / code generation via 9Router using OpenAI /v1/chat/completions or Anthropic /v1/messages format with streaming + auto-fallback combos. Use when the user wants to ask an LLM, generate code, summarize text, or run prompts through 9Router.
+description: Chat / code generation via LINA Router using OpenAI /v1/chat/completions or Anthropic /v1/messages format with streaming + auto-fallback combos. Use when the user wants to ask an LLM, generate code, summarize text, or run prompts through LINA Router.
 ---
 
-# 9Router — Chat
+# LINA Router — Chat
 
 Requires `NINEROUTER_URL` (and `NINEROUTER_KEY` if auth enabled). See https://raw.githubusercontent.com/decolua/lina-router/refs/heads/master/skills/lina-router/SKILL.md for setup.
 

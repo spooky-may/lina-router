@@ -1,14 +1,14 @@
-# Bienvenido a 9Router
+# Bienvenido a LINA Router
 
 **Usa Claude, Codex, Gemini GRATIS • Alternativas ultra-baratas desde $0.20/1M tokens**
 
-9Router es un router de modelos de IA que maximiza el valor de tus suscripciones y minimiza los costos mediante enrutamiento inteligente y fallback automático.
+LINA Router es un router de modelos de IA que maximiza el valor de tus suscripciones y minimiza los costos mediante enrutamiento inteligente y fallback automático.
 
 ---
 
-## ¿Qué es 9Router?
+## ¿Qué es LINA Router?
 
-9Router es un proxy inteligente que se sitúa entre tus herramientas de codificación (Cursor, Cline, Claude Desktop) y los proveedores de IA. Enruta automáticamente las solicitudes al mejor modelo disponible según la cuota, el costo y la disponibilidad.
+LINA Router es un proxy inteligente que se sitúa entre tus herramientas de codificación (Cursor, Cline, Claude Desktop) y los proveedores de IA. Enruta automáticamente las solicitudes al mejor modelo disponible según la cuota, el costo y la disponibilidad.
 
 **Deja de desperdiciar dinero:**
 - ❌ La cuota de suscripción expira sin usar cada mes
@@ -66,7 +66,7 @@ Total: $5.20/mes vs $2000 en ChatGPT API!
 
 ---
 
-## ¿Por qué elegir 9Router?
+## ¿Por qué elegir LINA Router?
 
 ### Maximiza tus suscripciones
 

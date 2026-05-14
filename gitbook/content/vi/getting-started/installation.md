@@ -1,6 +1,6 @@
 # Cài đặt
 
-Hướng dẫn cài đặt chi tiết cho 9Router với mẹo troubleshooting.
+Hướng dẫn cài đặt chi tiết cho LINA Router với mẹo troubleshooting.
 
 ---
 
@@ -31,13 +31,13 @@ npm --version
 
 ### Cách 1: Cài Global (Khuyên dùng)
 
-Cài 9Router toàn cục để dùng ở bất kỳ đâu:
+Cài LINA Router toàn cục để dùng ở bất kỳ đâu:
 
 ```bash
 npm install -g lina-router
 ```
 
-**Khởi động 9Router:**
+**Khởi động LINA Router:**
 
 ```bash
 lina-router
@@ -58,7 +58,7 @@ cd my-lina-router
 npm install lina-router
 ```
 
-**Khởi động 9Router:**
+**Khởi động LINA Router:**
 
 ```bash
 npx lina-router
@@ -345,7 +345,7 @@ Dashboard → Provider → Disconnect → Reconnect
 
 ### Sử dụng RAM cao
 
-**Vấn đề:** 9Router dùng quá nhiều RAM
+**Vấn đề:** LINA Router dùng quá nhiều RAM
 
 **Giải pháp: Khởi động lại server**
 

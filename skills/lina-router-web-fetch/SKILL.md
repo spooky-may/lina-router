@@ -1,9 +1,9 @@
 ---
 name: lina-router-web-fetch
-description: Fetch URL → markdown / text / HTML via 9Router /v1/web/fetch using Firecrawl / Jina Reader / Tavily Extract / Exa Contents. Use when the user wants to scrape a webpage, extract URL content, read article, or convert a URL to markdown.
+description: Fetch URL → markdown / text / HTML via LINA Router /v1/web/fetch using Firecrawl / Jina Reader / Tavily Extract / Exa Contents. Use when the user wants to scrape a webpage, extract URL content, read article, or convert a URL to markdown.
 ---
 
-# 9Router — Web Fetch
+# LINA Router — Web Fetch
 
 Requires `NINEROUTER_URL` (and `NINEROUTER_KEY` if auth enabled). See https://raw.githubusercontent.com/decolua/lina-router/refs/heads/master/skills/lina-router/SKILL.md for setup.
 

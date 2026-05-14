@@ -1,12 +1,12 @@
 # 🏠 Localhost Deployment
 
-Run 9Router on your local machine for development and personal use.
+Run LINA Router on your local machine for development and personal use.
 
 ---
 
 ## 📦 Installation
 
-Install 9Router globally via npm:
+Install LINA Router globally via npm:
 
 ```bash
 npm install -g lina-router
@@ -20,7 +20,7 @@ npm install -g lina-router
 
 ## 🚀 Starting the Server
 
-Start 9Router with a single command:
+Start LINA Router with a single command:
 
 ```bash
 lina-router
@@ -53,7 +53,7 @@ The API port (20128) and dashboard port (3000) are configured in the application
 
 ## 🛑 Stopping the Server
 
-Press `Ctrl+C` in the terminal where 9Router is running.
+Press `Ctrl+C` in the terminal where LINA Router is running.
 
 ```bash
 # In the terminal running lina-router
@@ -76,7 +76,7 @@ All your configurations, API keys, and combos are preserved in the data director
 
 ---
 
-## 📊 Updating 9Router
+## 📊 Updating LINA Router
 
 Update to the latest version:
 
