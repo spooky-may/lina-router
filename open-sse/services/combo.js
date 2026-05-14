@@ -147,8 +147,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
       }
 
-      // Check if should fallback to next model
-      const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
+      // Check if should fallback to next model.
+      // Pass the model identifier as `provider` so telemetry can attribute
+      // the failure to a specific combo entry.
+      const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText, 0, {
+        provider: modelStr,
+      });
 
       if (!shouldFallback) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });

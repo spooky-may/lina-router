@@ -1,4 +1,6 @@
 import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
+import { recordEvent, EVENT_KIND } from "../../src/lib/analytics/eventTelemetry.js";
+import { recordOutcome as recordHealthOutcome } from "../../src/lib/healthcheck/healthMonitor.js";
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
@@ -15,38 +17,73 @@ export function getQuotaCooldown(backoffLevel = 0) {
 /**
  * Check if error should trigger account fallback (switch to next account)
  * Config-driven: matches ERROR_RULES top-to-bottom (text rules first, then status)
+ *
+ * When `meta.provider` is supplied, also emits a FALLBACK_TRIGGERED telemetry
+ * event and records an unhealthy outcome for that provider's circuit breaker.
+ * Status 429 additionally emits a RATE_LIMIT_HIT event. Callers that omit
+ * `meta` are unaffected.
+ *
  * @param {number} status - HTTP status code
  * @param {string} errorText - Error message text
  * @param {number} backoffLevel - Current backoff level for exponential backoff
+ * @param {object} [meta] - Optional: { provider, accountId }
  * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number }}
  */
-export function checkFallbackError(status, errorText, backoffLevel = 0) {
+export function checkFallbackError(status, errorText, backoffLevel = 0, meta = null) {
   const lowerError = errorText
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
 
-  for (const rule of ERROR_RULES) {
-    // Text-based rule: match substring in error message
-    if (rule.text && lowerError && lowerError.includes(rule.text)) {
-      if (rule.backoff) {
-        const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
+  let outcome;
+
+  outer: {
+    for (const rule of ERROR_RULES) {
+      // Text-based rule: match substring in error message
+      if (rule.text && lowerError && lowerError.includes(rule.text)) {
+        if (rule.backoff) {
+          const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
+          outcome = { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
+          break outer;
+        }
+        outcome = { shouldFallback: true, cooldownMs: rule.cooldownMs };
+        break outer;
       }
-      return { shouldFallback: true, cooldownMs: rule.cooldownMs };
+
+      // Status-based rule: match HTTP status code
+      if (rule.status && rule.status === status) {
+        if (rule.backoff) {
+          const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
+          outcome = { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
+          break outer;
+        }
+        outcome = { shouldFallback: true, cooldownMs: rule.cooldownMs };
+        break outer;
+      }
     }
 
-    // Status-based rule: match HTTP status code
-    if (rule.status && rule.status === status) {
-      if (rule.backoff) {
-        const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
-      }
-      return { shouldFallback: true, cooldownMs: rule.cooldownMs };
-    }
+    // Default: transient cooldown for any unmatched error
+    outcome = { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
   }
 
-  // Default: transient cooldown for any unmatched error
-  return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
+  // Emit telemetry only when caller provided provider context
+  if (meta && meta.provider && outcome.shouldFallback) {
+    recordEvent(EVENT_KIND.FALLBACK_TRIGGERED, {
+      provider: meta.provider,
+      accountId: meta.accountId,
+      status,
+      cooldownMs: outcome.cooldownMs,
+    });
+    if (status === 429) {
+      recordEvent(EVENT_KIND.RATE_LIMIT_HIT, {
+        provider: meta.provider,
+        accountId: meta.accountId,
+        backoffLevel: outcome.newBackoffLevel ?? backoffLevel,
+      });
+    }
+    recordHealthOutcome(meta.provider, false, 0);
+  }
+
+  return outcome;
 }
 
 /**
@@ -178,11 +215,26 @@ export function filterAvailableAccounts(accounts, excludeId = null) {
 /**
  * Reset account state when request succeeds
  * Clears cooldown and resets backoff level to 0
+ *
+ * Also emits a REQUEST_OK telemetry event and records a healthy outcome
+ * for the provider's circuit breaker when `meta.provider` is supplied.
+ *
  * @param {object} account - Account object
+ * @param {object} [meta] - Optional context: { provider, latencyMs }
  * @returns {object} Updated account with reset state
  */
-export function resetAccountState(account) {
+export function resetAccountState(account, meta = null) {
   if (!account) return account;
+
+  if (meta && meta.provider) {
+    recordEvent(EVENT_KIND.REQUEST_OK, {
+      provider: meta.provider,
+      accountId: account.id,
+      latencyMs: meta.latencyMs,
+    });
+    recordHealthOutcome(meta.provider, true, meta.latencyMs || 0);
+  }
+
   return {
     ...account,
     rateLimitedUntil: null,
@@ -194,16 +246,39 @@ export function resetAccountState(account) {
 
 /**
  * Apply error state to account
+ *
+ * Emits FALLBACK_TRIGGERED + (when status is 429) RATE_LIMIT_HIT telemetry,
+ * and records an unhealthy outcome for the provider's circuit breaker when
+ * `meta.provider` is supplied. Existing callers without `meta` are unaffected.
+ *
  * @param {object} account - Account object
  * @param {number} status - HTTP status code
  * @param {string} errorText - Error message
+ * @param {object} [meta] - Optional context: { provider, latencyMs }
  * @returns {object} Updated account with error state
  */
-export function applyErrorState(account, status, errorText) {
+export function applyErrorState(account, status, errorText, meta = null) {
   if (!account) return account;
 
   const backoffLevel = account.backoffLevel || 0;
   const { cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel);
+
+  if (meta && meta.provider) {
+    recordEvent(EVENT_KIND.FALLBACK_TRIGGERED, {
+      provider: meta.provider,
+      accountId: account.id,
+      status,
+      cooldownMs,
+    });
+    if (status === 429) {
+      recordEvent(EVENT_KIND.RATE_LIMIT_HIT, {
+        provider: meta.provider,
+        accountId: account.id,
+        backoffLevel: newBackoffLevel ?? backoffLevel,
+      });
+    }
+    recordHealthOutcome(meta.provider, false, meta.latencyMs || 0);
+  }
 
   return {
     ...account,
