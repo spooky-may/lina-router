@@ -1,37 +1,41 @@
+import * as logger from "../utils/logger.js";
+import { parseApiKey, extractBearerToken } from "../utils/apiKey.js";
 import { errorResponse } from "open-sse/utils/error.js";
-import { extractBearerToken, parseApiKey } from "../utils/apiKey.js";
-import * as log from "../utils/logger.js";
+
+const JSON_HEADERS = {
+  "Content-Type": "application/json",
+  "Access-Control-Allow-Origin": "*"
+};
+
+async function resolveMachineId(payload, bearer) {
+  if (payload.machineId) return payload.machineId;
+  const decoded = await parseApiKey(bearer);
+  return decoded?.machineId;
+}
 
 export async function handleCacheClear(request, env) {
-  const apiKey = extractBearerToken(request);
-  if (!apiKey) {
-    return errorResponse(401, "Missing API key");
-  }
+  const bearer = extractBearerToken(request);
+  if (!bearer) return errorResponse(401, "Missing API key");
 
   try {
-    const body = await request.json().catch(() => ({}));
-    
-    // Get machineId from API key or body
-    let machineId = body.machineId;
-    if (!machineId) {
-      const parsed = await parseApiKey(apiKey);
-      machineId = parsed?.machineId;
-    }
+    const payload = await request.json().catch(() => ({}));
 
-    if (!machineId) {
-      return errorResponse(400, "Missing machineId");
-    }
+    // Resolve the target machineId — either from the request body or by decoding the API key
+    const machineId = await resolveMachineId(payload, bearer);
 
-    // No cache layer to clear anymore
-    log.info("CACHE", `Cache clear requested for machine: ${machineId} (no-op)`);
+    if (!machineId) return errorResponse(400, "Missing machineId");
 
-    return new Response(JSON.stringify({ success: true, machineId, message: "No cache layer" }), {
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*"
-      }
+    // Cache subsystem has been removed; we keep the endpoint as a no-op for compatibility
+    logger.info("CACHE", `Cache clear requested for machine: ${machineId} (no-op)`);
+
+    const responseBody = JSON.stringify({
+      success: true,
+      machineId,
+      message: "No cache layer"
     });
-  } catch (error) {
-    return errorResponse(500, error.message);
+
+    return new Response(responseBody, { headers: JSON_HEADERS });
+  } catch (err) {
+    return errorResponse(500, err.message);
   }
 }

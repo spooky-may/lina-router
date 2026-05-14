@@ -1,28 +1,55 @@
+// ---------------------------------------------------------------------------
+// Qwen OAuth — device-code flow with PKCE.
+//
+// The flow:
+//   1. Generate PKCE pair (verifier kept locally, challenge sent to Qwen).
+//   2. Request a device + user code; Qwen prefers `verification_uri_complete`
+//      because it embeds the user code, so the user only has to click.
+//   3. Poll the token endpoint at the cadence Qwen suggests (default 5s).
+//   4. Hand the resulting access/refresh tokens to the LINA Router server.
+// ---------------------------------------------------------------------------
+
 import open from "open";
 import { QWEN_CONFIG } from "../constants/oauth.js";
 import { getServerCredentials } from "../config/index.js";
 import { generatePKCE } from "../utils/pkce.js";
 import { spinner as createSpinner } from "../utils/ui.js";
 
-/**
- * Qwen OAuth Service
- * Uses Device Code Flow with PKCE
- */
+// 5 minutes worth of poll cycles at the default 5s interval.
+const MAX_POLL_ATTEMPTS = 60;
+const SLOW_DOWN_DELAY_MS = 5000;
+
+const FORM_ACCEPT_JSON = {
+  "Content-Type": "application/x-www-form-urlencoded",
+  Accept: "application/json",
+};
+
+function wait(ms) {
+  return new Promise((res) => setTimeout(res, ms));
+}
+
+function pickVerificationUrl(deviceData) {
+  return deviceData.verification_uri_complete || deviceData.verification_uri;
+}
+
+function announceUserPrompt(deviceData) {
+  console.log("\n📋 Please visit the following URL and enter the code:\n");
+  console.log(`   ${deviceData.verification_uri}\n`);
+  console.log(`   Code: ${deviceData.user_code}\n`);
+}
+
 export class QwenService {
   constructor() {
     this.config = QWEN_CONFIG;
   }
 
-  /**
-   * Request device code
-   */
+  // -------------------------------------------------------------------------
+  // POST /device_code → returns { device_code, user_code, verification_uri, … }
+  // -------------------------------------------------------------------------
   async requestDeviceCode(codeChallenge) {
     const response = await fetch(this.config.deviceCodeUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-      },
+      headers: FORM_ACCEPT_JSON,
       body: new URLSearchParams({
         client_id: this.config.clientId,
         scope: this.config.scope,
@@ -32,29 +59,26 @@ export class QwenService {
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Device code request failed: ${error}`);
+      const errBody = await response.text();
+      throw new Error(`Device code request failed: ${errBody}`);
     }
 
-    return await response.json();
+    return response.json();
   }
 
-  /**
-   * Poll for token
-   */
+  // -------------------------------------------------------------------------
+  // Poll until Qwen returns tokens, the user declines, or the device code
+  // expires. Returns the raw token response on success.
+  // -------------------------------------------------------------------------
   async pollForToken(deviceCode, codeVerifier, interval = 5) {
-    const maxAttempts = 60; // 5 minutes
-    const pollInterval = interval * 1000;
+    const pollDelayMs = interval * 1000;
 
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      await new Promise((r) => setTimeout(r, pollInterval));
+    for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt += 1) {
+      await wait(pollDelayMs);
 
       const response = await fetch(this.config.tokenUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Accept: "application/json",
-        },
+        headers: FORM_ACCEPT_JSON,
         body: new URLSearchParams({
           grant_type: "urn:ietf:params:oauth:grant-type:device_code",
           client_id: this.config.clientId,
@@ -63,32 +87,28 @@ export class QwenService {
         }),
       });
 
-      if (response.ok) {
-        return await response.json();
-      }
+      if (response.ok) return response.json();
 
-      const error = await response.json();
+      const errBody = await response.json();
+      const code = errBody.error;
 
-      if (error.error === "authorization_pending") {
+      if (code === "authorization_pending") continue;
+      if (code === "slow_down") {
+        await wait(SLOW_DOWN_DELAY_MS);
         continue;
-      } else if (error.error === "slow_down") {
-        await new Promise((r) => setTimeout(r, 5000));
-        continue;
-      } else if (error.error === "expired_token") {
-        throw new Error("Device code expired");
-      } else if (error.error === "access_denied") {
-        throw new Error("Access denied");
-      } else {
-        throw new Error(error.error_description || error.error);
       }
+      if (code === "expired_token") throw new Error("Device code expired");
+      if (code === "access_denied") throw new Error("Access denied");
+
+      throw new Error(errBody.error_description || code);
     }
 
     throw new Error("Authorization timeout");
   }
 
-  /**
-   * Save Qwen tokens to server
-   */
+  // -------------------------------------------------------------------------
+  // Hand tokens to the LINA Router server-side endpoint that persists them.
+  // -------------------------------------------------------------------------
   async saveTokens(tokens) {
     const { server, token, userId } = getServerCredentials();
 
@@ -108,46 +128,32 @@ export class QwenService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || "Failed to save tokens");
+      const errBody = await response.json();
+      throw new Error(errBody.error || "Failed to save tokens");
     }
 
-    return await response.json();
+    return response.json();
   }
 
-  /**
-   * Complete Qwen OAuth flow
-   */
+  // -------------------------------------------------------------------------
+  // Public entry point used by the CLI. Single async pipeline with a single
+  // spinner so the user sees stage-by-stage progress.
+  // -------------------------------------------------------------------------
   async connect() {
     const spinner = createSpinner("Starting Qwen OAuth...").start();
 
     try {
       spinner.text = "Generating PKCE...";
-
-      // Generate PKCE
       const { codeVerifier, codeChallenge } = generatePKCE();
 
       spinner.text = "Requesting device code...";
-
-      // Request device code
       const deviceData = await this.requestDeviceCode(codeChallenge);
 
       spinner.stop();
-
-      console.log("\n📋 Please visit the following URL and enter the code:\n");
-      console.log(`   ${deviceData.verification_uri}\n`);
-      console.log(`   Code: ${deviceData.user_code}\n`);
-
-      // Open browser
-      if (deviceData.verification_uri_complete) {
-        await open(deviceData.verification_uri_complete);
-      } else {
-        await open(deviceData.verification_uri);
-      }
+      announceUserPrompt(deviceData);
+      await open(pickVerificationUrl(deviceData));
 
       spinner.start("Waiting for authorization...");
-
-      // Poll for token
       const tokens = await this.pollForToken(
         deviceData.device_code,
         codeVerifier,
@@ -155,16 +161,13 @@ export class QwenService {
       );
 
       spinner.text = "Saving tokens to server...";
-
-      // Save tokens to server
       await this.saveTokens(tokens);
 
       spinner.succeed("Qwen connected successfully!");
       return true;
-    } catch (error) {
-      spinner.fail(`Failed: ${error.message}`);
-      throw error;
+    } catch (err) {
+      spinner.fail(`Failed: ${err.message}`);
+      throw err;
     }
   }
 }
-

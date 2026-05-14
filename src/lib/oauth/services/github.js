@@ -1,68 +1,91 @@
+// ---------------------------------------------------------------------------
+// GitHub Copilot OAuth — device-code flow.
+//
+// GitHub does not return a refresh_token for the device flow, so once the
+// access token is exchanged for a Copilot token (`copilotToken.token`), the
+// caller is expected to refresh by re-running `getCopilotToken` against the
+// long-lived GitHub access token.
+// ---------------------------------------------------------------------------
+
 import { OAuthService } from "./oauth.js";
 import { GITHUB_CONFIG } from "../constants/oauth.js";
 import { spinner as createSpinner } from "../utils/ui.js";
 
-/**
- * GitHub Copilot OAuth Service
- * Uses Device Code Flow for authentication
- */
+const FORM_HEADERS = Object.freeze({
+  "Content-Type": "application/x-www-form-urlencoded",
+  Accept: "application/json",
+});
+
+const SLOW_DOWN_BACKOFF_MS = 5000;
+
+function ghJsonHeaders(token) {
+  return {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/json",
+    "X-GitHub-Api-Version": GITHUB_CONFIG.apiVersion,
+    "User-Agent": GITHUB_CONFIG.userAgent,
+  };
+}
+
+async function readJsonOrThrow(response, context) {
+  if (response.ok) return response.json();
+  const errBody = await response.text();
+  throw new Error(`Failed to ${context}: ${errBody}`);
+}
+
+async function openVerificationUrl(verificationUri) {
+  try {
+    const { default: open } = await import("open");
+    await open(verificationUri);
+  } catch {
+    console.log(
+      "Could not open browser automatically. Please visit the URL above manually."
+    );
+  }
+}
+
+function announceUserCode(verificationUri, userCode) {
+  console.log(`\nPlease visit: ${verificationUri}`);
+  console.log(`Enter code: ${userCode}\n`);
+}
+
 export class GitHubService extends OAuthService {
   constructor() {
     super(GITHUB_CONFIG);
   }
 
-  /**
-   * Get device code for GitHub authentication
-   */
+  // -------------------------------------------------------------------------
+  // Step 1: request a device code (no auth required)
+  // -------------------------------------------------------------------------
   async getDeviceCode() {
-    const response = await fetch(`${GITHUB_CONFIG.deviceCodeUrl}`, {
+    const response = await fetch(GITHUB_CONFIG.deviceCodeUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-      },
+      headers: FORM_HEADERS,
       body: new URLSearchParams({
         client_id: GITHUB_CONFIG.clientId,
         scope: GITHUB_CONFIG.scopes,
       }),
     });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Failed to get device code: ${error}`);
-    }
-
-    return await response.json();
+    return readJsonOrThrow(response, "get device code");
   }
 
-  /**
-   * Poll for access token using device code
-   */
+  // -------------------------------------------------------------------------
+  // Step 2: poll until the user authorises us, the code expires, or they bail.
+  // -------------------------------------------------------------------------
   async pollAccessToken(deviceCode, verificationUri, userCode, interval = 5000) {
     const spinner = createSpinner("Waiting for GitHub authentication...").start();
-    
-    // Show user code and verification URL
-    console.log(`\nPlease visit: ${verificationUri}`);
-    console.log(`Enter code: ${userCode}\n`);
-    
-    // Open browser automatically
-    try {
-      const open = (await import("open")).default;
-      await open(verificationUri);
-    } catch (error) {
-      console.log("Could not open browser automatically. Please visit the URL above manually.");
-    }
+    announceUserCode(verificationUri, userCode);
+    await openVerificationUrl(verificationUri);
 
-    // Poll for access token
+    let currentInterval = interval;
+
+    // eslint-disable-next-line no-constant-condition
     while (true) {
-      await new Promise(resolve => setTimeout(resolve, interval));
+      await new Promise((res) => setTimeout(res, currentInterval));
 
-      const response = await fetch(`${GITHUB_CONFIG.tokenUrl}`, {
+      const tokenResponse = await fetch(GITHUB_CONFIG.tokenUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Accept: "application/json",
-        },
+        headers: FORM_HEADERS,
         body: new URLSearchParams({
           client_id: GITHUB_CONFIG.clientId,
           device_code: deviceCode,
@@ -70,104 +93,80 @@ export class GitHubService extends OAuthService {
         }),
       });
 
-      const data = await response.json();
+      const payload = await tokenResponse.json();
 
-      if (data.access_token) {
+      if (payload.access_token) {
         spinner.succeed("GitHub authentication successful!");
         return {
-          access_token: data.access_token,
-          token_type: data.token_type,
-          scope: data.scope,
+          access_token: payload.access_token,
+          token_type: payload.token_type,
+          scope: payload.scope,
         };
-      } else if (data.error === "authorization_pending") {
-        // Continue polling
-        continue;
-      } else if (data.error === "slow_down") {
-        // Increase polling interval
-        interval += 5000;
-        continue;
-      } else if (data.error === "expired_token") {
-        spinner.fail("Device code expired. Please try again.");
-        throw new Error("Device code expired");
-      } else if (data.error === "access_denied") {
-        spinner.fail("Access denied by user.");
-        throw new Error("Access denied");
-      } else {
-        spinner.fail("Failed to get access token.");
-        throw new Error(data.error_description || data.error);
+      }
+
+      switch (payload.error) {
+        case "authorization_pending":
+          continue;
+        case "slow_down":
+          currentInterval += SLOW_DOWN_BACKOFF_MS;
+          continue;
+        case "expired_token":
+          spinner.fail("Device code expired. Please try again.");
+          throw new Error("Device code expired");
+        case "access_denied":
+          spinner.fail("Access denied by user.");
+          throw new Error("Access denied");
+        default:
+          spinner.fail("Failed to get access token.");
+          throw new Error(payload.error_description || payload.error);
       }
     }
   }
 
-  /**
-   * Get Copilot token using GitHub access token
-   */
+  // -------------------------------------------------------------------------
+  // Step 3a: exchange GitHub access token for a short-lived Copilot token.
+  // -------------------------------------------------------------------------
   async getCopilotToken(accessToken) {
-    const response = await fetch(`${GITHUB_CONFIG.copilotTokenUrl}`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`, // GitHub API typically uses Bearer
-        Accept: "application/json",
-        "X-GitHub-Api-Version": GITHUB_CONFIG.apiVersion,
-        "User-Agent": GITHUB_CONFIG.userAgent,
-      },
+    const response = await fetch(GITHUB_CONFIG.copilotTokenUrl, {
+      headers: ghJsonHeaders(accessToken),
     });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Failed to get Copilot token: ${error}`);
-    }
-
-    return await response.json();
+    return readJsonOrThrow(response, "get Copilot token");
   }
 
-  /**
-   * Get user info using GitHub access token
-   */
+  // -------------------------------------------------------------------------
+  // Step 3b: fetch the authenticated user profile.
+  // -------------------------------------------------------------------------
   async getUserInfo(accessToken) {
-    const response = await fetch(`${GITHUB_CONFIG.userInfoUrl}`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`, // GitHub API typically uses Bearer
-        Accept: "application/json",
-        "X-GitHub-Api-Version": GITHUB_CONFIG.apiVersion,
-        "User-Agent": GITHUB_CONFIG.userAgent,
-      },
+    const response = await fetch(GITHUB_CONFIG.userInfoUrl, {
+      headers: ghJsonHeaders(accessToken),
     });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Failed to get user info: ${error}`);
-    }
-
-    return await response.json();
+    return readJsonOrThrow(response, "get user info");
   }
 
-  /**
-   * Complete GitHub Copilot authentication flow
-   */
+  // -------------------------------------------------------------------------
+  // Glue: full device-code → Copilot token → user-info flow.
+  // -------------------------------------------------------------------------
   async authenticate() {
     try {
-      // Get device code
-      const deviceResponse = await this.getDeviceCode();
-      
-      // Poll for access token
-      const tokenResponse = await this.pollAccessToken(
-        deviceResponse.device_code, 
-        deviceResponse.verification_uri, 
-        deviceResponse.user_code
+      const device = await this.getDeviceCode();
+
+      const token = await this.pollAccessToken(
+        device.device_code,
+        device.verification_uri,
+        device.user_code
       );
-      
-      // Get Copilot token
-      const copilotToken = await this.getCopilotToken(tokenResponse.access_token);
-      
-      // Get user info
-      const userInfo = await this.getUserInfo(tokenResponse.access_token);
-      
+
+      const [copilotToken, userInfo] = await Promise.all([
+        this.getCopilotToken(token.access_token),
+        this.getUserInfo(token.access_token),
+      ]);
+
       console.log(`\n✅ Successfully authenticated as ${userInfo.login}`);
-      
+
       return {
-        accessToken: tokenResponse.access_token,
+        accessToken: token.access_token,
         copilotToken: copilotToken.token,
-        refreshToken: null, // GitHub device flow doesn't return refresh token
+        refreshToken: null, // device flow does not issue refresh tokens
         expiresIn: copilotToken.expires_at,
         userInfo: {
           id: userInfo.id,
@@ -177,23 +176,31 @@ export class GitHubService extends OAuthService {
         },
         copilotTokenInfo: copilotToken,
       };
-    } catch (error) {
-      throw new Error(`GitHub authentication failed: ${error.message}`);
+    } catch (err) {
+      throw new Error(`GitHub authentication failed: ${err.message}`);
     }
   }
 
-  /**
-   * Connect to server with GitHub credentials
-   */
+  // -------------------------------------------------------------------------
+  // High-level: authenticate, then push credentials to the configured server.
+  // -------------------------------------------------------------------------
   async connect() {
+    let auth;
     try {
-      // Authenticate with GitHub
-      const authResult = await this.authenticate();
-      
-      // Send credentials to server
-      const { server, token, userId } = await import("../config/index.js").then(m => m.getServerCredentials());
-      const spinner = (await import("../utils/ui.js")).spinner("Connecting to server...").start();
-      
+      auth = await this.authenticate();
+    } catch (err) {
+      const { error: showError } = await import("../utils/ui.js");
+      showError(`GitHub connection failed: ${err.message}`);
+      throw err;
+    }
+
+    const config = await import("../config/index.js");
+    const { server, token, userId } = await config.getServerCredentials();
+
+    const ui = await import("../utils/ui.js");
+    const spinner = ui.spinner("Connecting to server...").start();
+
+    try {
       const response = await fetch(`${server}/api/cli/providers/github`, {
         method: "POST",
         headers: {
@@ -202,24 +209,24 @@ export class GitHubService extends OAuthService {
           "X-User-Id": userId,
         },
         body: JSON.stringify({
-          accessToken: authResult.accessToken,
-          copilotToken: authResult.copilotToken,
-          userInfo: authResult.userInfo,
-          copilotTokenInfo: authResult.copilotTokenInfo,
+          accessToken: auth.accessToken,
+          copilotToken: auth.copilotToken,
+          userInfo: auth.userInfo,
+          copilotTokenInfo: auth.copilotTokenInfo,
         }),
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || "Failed to connect to server");
       }
-      
+
       spinner.succeed("GitHub Copilot connected successfully!");
-      console.log(`\nConnected as: ${authResult.userInfo.login}`);
-    } catch (error) {
+      console.log(`\nConnected as: ${auth.userInfo.login}`);
+    } catch (err) {
       const { error: showError } = await import("../utils/ui.js");
-      showError(`GitHub connection failed: ${error.message}`);
-      throw error;
+      showError(`GitHub connection failed: ${err.message}`);
+      throw err;
     }
   }
 }

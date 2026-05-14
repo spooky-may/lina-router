@@ -1,4 +1,5 @@
 import open from "open";
+
 import { OAuthService } from "./oauth.js";
 import { CODEX_CONFIG } from "../constants/oauth.js";
 import { getServerCredentials } from "../config/index.js";
@@ -6,19 +7,37 @@ import { startLocalServer } from "../utils/server.js";
 import { generatePKCE } from "../utils/pkce.js";
 import { spinner as createSpinner } from "../utils/ui.js";
 
-/**
- * Codex (OpenAI) OAuth Service
+// Codex CLI hardcodes 1455 as its loopback port — match it so users with an
+// existing browser session don't get caught by OpenAI's redirect_uri check.
+const CODEX_LOOPBACK_PORT = 1455;
+const CALLBACK_PATH = "/auth/callback";
+const AUTH_TIMEOUT_MS = 300000;
+const TOKEN_CONTENT_TYPE = "application/x-www-form-urlencoded";
+
+// OpenAI's authorize endpoint is finicky about spaces — they MUST be %20,
+// not the `+` that URLSearchParams produces. Hand-roll the query string.
+function encodeQueryStrict(paramsObj) {
+  const parts = [];
+  for (const key of Object.keys(paramsObj)) {
+    parts.push(`${key}=${encodeURIComponent(paramsObj[key])}`);
+  }
+  return parts.join("&");
+}
+
+/*
+ * CodexService — OpenAI (Codex CLI) OAuth.
+ *
+ * Standard PKCE Authorization Code flow with one wrinkle: the authorize URL
+ * has to be hand-encoded (see encodeQueryStrict) and the redirect URI must
+ * land on the fixed loopback port 1455.
  */
 export class CodexService extends OAuthService {
   constructor() {
     super(CODEX_CONFIG);
   }
 
-  /**
-   * Build Codex authorization URL
-   */
+  // Assemble the consent URL with strict %20 encoding.
   buildCodexAuthUrl(redirectUri, state, codeChallenge) {
-    // Build URL manually to ensure space encoding as %20 instead of +
     const params = {
       response_type: "code",
       client_id: CODEX_CONFIG.clientId,
@@ -27,19 +46,13 @@ export class CodexService extends OAuthService {
       code_challenge: codeChallenge,
       code_challenge_method: CODEX_CONFIG.codeChallengeMethod,
       ...CODEX_CONFIG.extraParams,
-      state: state,
+      state,
     };
 
-    const queryString = Object.entries(params)
-      .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
-      .join("&");
-
-    return `${CODEX_CONFIG.authorizeUrl}?${queryString}`;
+    return `${CODEX_CONFIG.authorizeUrl}?${encodeQueryStrict(params)}`;
   }
 
-  /**
-   * Save Codex tokens to server
-   */
+  // Push tokens to the lina-router server for persistence.
   async saveTokens(tokens) {
     const { server, token, userId } = getServerCredentials();
 
@@ -62,75 +75,82 @@ export class CodexService extends OAuthService {
       throw new Error(error.error || "Failed to save tokens");
     }
 
-    return await response.json();
+    return response.json();
   }
 
-  /**
-   * Complete Codex OAuth flow
-   */
+  // Block until the local HTTP server sees a /auth/callback hit, or fail
+  // with the standard timeout message once the budget elapses.
+  _waitForCallback(getCallbackParams) {
+    return new Promise((resolve, reject) => {
+      const deadline = setTimeout(() => {
+        clearInterval(poller);
+        reject(new Error("Authentication timeout (5 minutes)"));
+      }, AUTH_TIMEOUT_MS);
+
+      const poller = setInterval(() => {
+        const params = getCallbackParams();
+        if (!params) return;
+        clearInterval(poller);
+        clearTimeout(deadline);
+        resolve(params);
+      }, 100);
+    });
+  }
+
+  // Validate the params delivered to the loopback callback; throw with the
+  // exact messages the rest of the CLI expects.
+  _assertCallbackOk(callbackParams) {
+    if (callbackParams.error) {
+      throw new Error(callbackParams.error_description || callbackParams.error);
+    }
+    if (!callbackParams.code) {
+      throw new Error("No authorization code received");
+    }
+  }
+
+  // Run the whole flow front-to-back.
   async connect() {
     const spinner = createSpinner("Starting Codex OAuth...").start();
 
     try {
       spinner.text = "Starting local server...";
 
-      // Start local server for callback (use fixed port 1455 like real Codex CLI)
-      const fixedPort = 1455;
+      // Use a mutable slot the loopback handler can write into.
       let callbackParams = null;
-      const { port, close } = await startLocalServer((params) => {
+      const setCallback = (params) => {
         callbackParams = params;
-      }, fixedPort);
+      };
+      const getCallback = () => callbackParams;
 
-      const redirectUri = `http://localhost:${port}/auth/callback`;
+      const { port, close } = await startLocalServer(setCallback, CODEX_LOOPBACK_PORT);
+      const redirectUri = `http://localhost:${port}${CALLBACK_PATH}`;
       spinner.succeed(`Local server started on port ${port}`);
 
-      // Generate PKCE
+      // PKCE pair + opaque state value for this run.
       const { codeVerifier, codeChallenge, state } = generatePKCE();
-
-      // Build authorization URL
       const authUrl = this.buildCodexAuthUrl(redirectUri, state, codeChallenge);
 
       console.log("\nOpening browser for OpenAI authentication...");
       console.log(`If browser doesn't open, visit:\n${authUrl}\n`);
 
-      // Open browser
       await open(authUrl);
 
-      // Wait for callback
       spinner.start("Waiting for OpenAI authorization...");
-
-      await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error("Authentication timeout (5 minutes)"));
-        }, 300000);
-
-        const checkInterval = setInterval(() => {
-          if (callbackParams) {
-            clearInterval(checkInterval);
-            clearTimeout(timeout);
-            resolve();
-          }
-        }, 100);
-      });
-
+      const received = await this._waitForCallback(getCallback);
       close();
 
-      if (callbackParams.error) {
-        throw new Error(callbackParams.error_description || callbackParams.error);
-      }
-
-      if (!callbackParams.code) {
-        throw new Error("No authorization code received");
-      }
+      this._assertCallbackOk(received);
 
       spinner.start("Exchanging code for tokens...");
-
-      // Exchange code for tokens (Codex uses form-urlencoded)
-      const tokens = await this.exchangeCode(callbackParams.code, redirectUri, codeVerifier, "application/x-www-form-urlencoded");
+      // Codex's token endpoint speaks form-urlencoded (unlike Claude).
+      const tokens = await this.exchangeCode(
+        received.code,
+        redirectUri,
+        codeVerifier,
+        TOKEN_CONTENT_TYPE
+      );
 
       spinner.text = "Saving tokens to server...";
-
-      // Save tokens to server
       await this.saveTokens(tokens);
 
       spinner.succeed("Codex connected successfully!");
@@ -141,4 +161,3 @@ export class CodexService extends OAuthService {
     }
   }
 }
-

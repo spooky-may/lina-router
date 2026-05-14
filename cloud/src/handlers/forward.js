@@ -1,75 +1,102 @@
-// CF headers to remove
-const CF_HEADERS = [
-  "cf-connecting-ip", "cf-connecting-ip6", "cf-ray", "cf-visitor",
-  "cf-ipcountry", "cf-tracking-id", "cf-connecting-ip6-policy",
-  "x-real-ip", "x-forwarded-for", "x-forwarded-proto", "x-forwarded-host"
-];
+/*
+ * Generic outbound HTTP forwarder.
+ * Strips Cloudflare edge-injected metadata before relay so the upstream
+ * sees a "clean" request originating from this worker.
+ */
 
-// Forward request to any endpoint
+const STRIPPED_REQUEST_HEADERS = new Set([
+  "cf-connecting-ip",
+  "cf-connecting-ip6",
+  "cf-connecting-ip6-policy",
+  "cf-ipcountry",
+  "cf-ray",
+  "cf-tracking-id",
+  "cf-visitor",
+  "x-forwarded-for",
+  "x-forwarded-host",
+  "x-forwarded-proto",
+  "x-real-ip",
+]);
+
+const JSON_HEADERS = { "Content-Type": "application/json" };
+
+// Minimize Cloudflare-side feature injection on outbound fetch.
+const RELAY_CF_OPTS = Object.freeze({
+  minify: false,
+  mirage: false,
+  polish: "off",
+  scrapeShield: false,
+});
+
+function reply(payload, status) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: JSON_HEADERS,
+  });
+}
+
+function pruneIncomingHeaders(raw) {
+  const kept = {};
+  for (const headerName of Object.keys(raw)) {
+    if (STRIPPED_REQUEST_HEADERS.has(headerName.toLowerCase())) continue;
+    kept[headerName] = raw[headerName];
+  }
+  return kept;
+}
+
+function decorateForwardHeaders(headerBag, parsedUrl, originIp) {
+  headerBag["X-Client-IP"] = originIp;
+  headerBag["X-Forwarded-Proto"] = parsedUrl.protocol.replace(":", "");
+  headerBag["X-Forwarded-Host"] = parsedUrl.host;
+  headerBag["X-From-Worker"] = "1";
+  return headerBag;
+}
+
+// Public entry: POST a JSON envelope describing the upstream call.
 export async function handleForward(request) {
   try {
-    const url = new URL(request.url);
-    const clientIp = request.headers.get("CF-Connecting-IP") || "";
-    const { targetUrl, headers = {}, body } = await request.json();
-    
+    const incomingUrl = new URL(request.url);
+    const callerIp = request.headers.get("CF-Connecting-IP") || "";
+
+    const envelope = await request.json();
+    const { targetUrl, headers = {}, body } = envelope;
+
     if (!targetUrl) {
-      return new Response(JSON.stringify({ error: "targetUrl is required" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" }
-      });
+      return reply({ error: "targetUrl is required" }, 400);
     }
 
-    // Filter out CF headers from input
-    const cleanHeaders = {};
-    for (const [key, value] of Object.entries(headers)) {
-      if (!CF_HEADERS.includes(key.toLowerCase())) {
-        cleanHeaders[key] = value;
-      }
-    }
-
-    // Set standard forwarding headers
-    cleanHeaders["X-Client-IP"] = clientIp;
-    cleanHeaders["X-Forwarded-Proto"] = url.protocol.replace(":", "");
-    cleanHeaders["X-Forwarded-Host"] = url.host;
-    cleanHeaders["X-From-Worker"] = "1";
+    const relayHeaders = decorateForwardHeaders(
+      pruneIncomingHeaders(headers),
+      incomingUrl,
+      callerIp
+    );
 
     console.log("[FORWARD] Target:", targetUrl);
-    console.log("[FORWARD] Headers:", JSON.stringify(cleanHeaders));
+    console.log("[FORWARD] Headers:", JSON.stringify(relayHeaders));
 
-    // Create Request object to have more control over headers
-    const outgoingRequest = new Request(targetUrl, {
+    // Wrap in a Request first so headers are precisely controlled.
+    const outbound = new Request(targetUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...cleanHeaders
+        ...relayHeaders,
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
     });
 
-    // Use fetch with cf options to minimize auto-added headers
-    const response = await fetch(outgoingRequest, {
-      cf: {
-        // Disable automatic features that add headers
-        scrapeShield: false,
-        minify: false,
-        mirage: false,
-        polish: "off"
-      }
-    });
+    const upstreamResponse = await fetch(outbound, { cf: RELAY_CF_OPTS });
 
-    // Stream response back to client
-    return new Response(response.body, {
-      status: response.status,
+    // Pipe upstream body straight through; add permissive CORS.
+    return new Response(upstreamResponse.body, {
+      status: upstreamResponse.status,
       headers: {
-        "Content-Type": response.headers.get("Content-Type") || "application/json",
-        "Access-Control-Allow-Origin": "*"
-      }
+        "Content-Type":
+          upstreamResponse.headers.get("Content-Type") || "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
     });
-  } catch (error) {
-    console.error("[FORWARD] Error:", error.message);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
+  } catch (err) {
+    console.error("[FORWARD] Error:", err.message);
+    return reply({ error: err.message }, 500);
   }
 }

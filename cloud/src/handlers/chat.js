@@ -173,7 +173,10 @@ async function dispatchSingleModel(body, rawModel, deviceId, env) {
 
     if (outcome.success) return outcome.response;
 
-    const { shouldFallback } = checkFallbackError(outcome.status, outcome.error);
+    const { shouldFallback } = checkFallbackError(outcome.status, outcome.error, 0, {
+      provider,
+      accountId: account.id,
+    });
 
     if (shouldFallback) {
       log.warn("FALLBACK", `${provider.toUpperCase()} | ${account.id} | ${outcome.status}`);

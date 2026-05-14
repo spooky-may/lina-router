@@ -1,173 +1,205 @@
 import { connect } from "cloudflare:sockets";
 
-// Forward request via raw TCP socket (bypasses CF auto headers)
+/*
+ * Low-level forwarder that speaks HTTP/1.1 over a raw TCP (optionally TLS) socket.
+ * Used to escape Cloudflare's auto-added headers on the outbound fetch path.
+ */
+
+const JSON_HEADERS = { "Content-Type": "application/json" };
+const TAG = "[FORWARD_RAW]";
+const READ_LOOP_LIMIT = 100; // ~10s ceiling at typical chunk cadence
+const HEADER_TERMINATOR = "\r\n\r\n";
+
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+function jsonReply(payload, status) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: JSON_HEADERS,
+  });
+}
+
+function joinChunks(prev, next) {
+  if (!next) return prev;
+  const out = new Uint8Array(prev.length + next.length);
+  out.set(prev);
+  out.set(next, prev.length);
+  return out;
+}
+
+function openSocket(host, port, tls) {
+  if (tls) {
+    console.log(TAG, "Creating TLS socket...");
+    const s = connect({
+      hostname: host,
+      port: parseInt(port),
+      secureTransport: "on",
+    });
+    console.log(TAG, "TLS socket created");
+    return s;
+  }
+  return connect({ hostname: host, port: parseInt(port) });
+}
+
+function buildHttpRequestString(path, headerBag, bodyStr) {
+  let wire = `POST ${path} HTTP/1.1\r\n`;
+  for (const k of Object.keys(headerBag)) {
+    wire += `${k}: ${headerBag[k]}\r\n`;
+  }
+  wire += `\r\n${bodyStr}`;
+  return wire;
+}
+
+function isResponseFinished(buf) {
+  const text = decoder.decode(buf);
+  const headerEnd = text.indexOf(HEADER_TERMINATOR);
+  if (headerEnd === -1) return false;
+
+  const headersBlob = text.substring(0, headerEnd).toLowerCase();
+  const match = headersBlob.match(/content-length:\s*(\d+)/);
+  if (!match) return false;
+
+  const expected = parseInt(match[1]);
+  const received = text.length - headerEnd - 4;
+  return received >= expected;
+}
+
+async function drainSocket(reader) {
+  let buffer = new Uint8Array(0);
+  let iteration = 0;
+
+  while (iteration < READ_LOOP_LIMIT) {
+    console.log(TAG, "Reading attempt:", iteration);
+    const { done, value } = await reader.read();
+    console.log(
+      TAG,
+      "Read result - done:",
+      done,
+      "value length:",
+      value?.length
+    );
+
+    if (done) break;
+
+    buffer = joinChunks(buffer, value);
+
+    if (value && isResponseFinished(buffer)) {
+      console.log(TAG, "Complete response received");
+      break;
+    }
+
+    iteration++;
+  }
+
+  return buffer;
+}
+
+function parseHttpResponse(rawText) {
+  const splitIdx = rawText.indexOf(HEADER_TERMINATOR);
+  if (splitIdx === -1) {
+    console.log(TAG, "Full response data:", rawText);
+    throw new Error("Invalid HTTP response - no header end found");
+  }
+
+  const headerBlock = rawText.substring(0, splitIdx);
+  const bodyBlock = rawText.substring(splitIdx + 4);
+
+  const lines = headerBlock.split("\r\n");
+  const statusLine = lines[0];
+  const statusMatch = statusLine.match(/HTTP\/[\d.]+ (\d+)/);
+  const status = statusMatch ? parseInt(statusMatch[1]) : 200;
+
+  const headerMap = {};
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    const colonAt = line.indexOf(":");
+    if (colonAt <= 0) continue;
+    const key = line.substring(0, colonAt).trim().toLowerCase();
+    const val = line.substring(colonAt + 1).trim();
+    headerMap[key] = val;
+  }
+
+  return { status, headers: headerMap, body: bodyBlock };
+}
+
+// Public entry: raw-socket variant of the JSON forwarder.
 export async function handleForwardRaw(request) {
   try {
     const { targetUrl, headers = {}, body } = await request.json();
-    
+
     if (!targetUrl) {
-      return new Response(JSON.stringify({ error: "targetUrl is required" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" }
-      });
+      return jsonReply({ error: "targetUrl is required" }, 400);
     }
 
-    const url = new URL(targetUrl);
-    const host = url.hostname;
-    const port = url.port || (url.protocol === "https:" ? 443 : 80);
-    const path = url.pathname + url.search;
-    const isHttps = url.protocol === "https:";
+    const target = new URL(targetUrl);
+    const tlsRequired = target.protocol === "https:";
+    const host = target.hostname;
+    const port = target.port || (tlsRequired ? 443 : 80);
+    const path = target.pathname + target.search;
 
-    console.log("[FORWARD_RAW] Connecting to:", host, port, isHttps ? "(TLS)" : "");
+    console.log(TAG, "Connecting to:", host, port, tlsRequired ? "(TLS)" : "");
 
-    // Connect to target server
-    let secureSocket;
-    if (isHttps) {
-      // For HTTPS, connect directly with TLS enabled
-      console.log("[FORWARD_RAW] Creating TLS socket...");
-      secureSocket = connect({ 
-        hostname: host, 
-        port: parseInt(port),
-        secureTransport: "on"
-      });
-      console.log("[FORWARD_RAW] TLS socket created");
-    } else {
-      secureSocket = connect({ hostname: host, port: parseInt(port) });
-    }
+    const sock = openSocket(host, port, tlsRequired);
+    console.log(TAG, "Socket object:", sock);
+    console.log(TAG, "Socket opened:", sock.opened);
 
-    console.log("[FORWARD_RAW] Socket object:", secureSocket);
-    console.log("[FORWARD_RAW] Socket opened:", secureSocket.opened);
-    
-    // Wait for socket to be ready
     try {
-      console.log("[FORWARD_RAW] Waiting for socket to open...");
-      await secureSocket.opened;
-      console.log("[FORWARD_RAW] Socket opened successfully");
-    } catch (openError) {
-      console.error("[FORWARD_RAW] Socket open error:", openError.message);
-      throw openError;
+      console.log(TAG, "Waiting for socket to open...");
+      await sock.opened;
+      console.log(TAG, "Socket opened successfully");
+    } catch (openErr) {
+      console.error(TAG, "Socket open error:", openErr.message);
+      throw openErr;
     }
 
-    console.log("[FORWARD_RAW] Getting writer and reader...");
-    const writer = secureSocket.writable.getWriter();
-    const reader = secureSocket.readable.getReader();
-    console.log("[FORWARD_RAW] Writer and reader obtained");
+    console.log(TAG, "Getting writer and reader...");
+    const writer = sock.writable.getWriter();
+    const reader = sock.readable.getReader();
+    console.log(TAG, "Writer and reader obtained");
 
-    // Build raw HTTP request
     const bodyStr = JSON.stringify(body);
-    const requestHeaders = {
-      "Host": host,
+    const outboundHeaders = {
+      Host: host,
       "Content-Type": "application/json",
-      "Content-Length": new TextEncoder().encode(bodyStr).length.toString(),
-      "Connection": "close",
-      ...headers
+      "Content-Length": encoder.encode(bodyStr).length.toString(),
+      Connection: "close",
+      ...headers,
     };
 
-    // Build HTTP request string
-    let httpRequest = `POST ${path} HTTP/1.1\r\n`;
-    for (const [key, value] of Object.entries(requestHeaders)) {
-      httpRequest += `${key}: ${value}\r\n`;
-    }
-    httpRequest += `\r\n${bodyStr}`;
+    const wire = buildHttpRequestString(path, outboundHeaders, bodyStr);
+    console.log(TAG, "Sending request:", wire.substring(0, 300));
+    console.log(TAG, "Full request length:", wire.length);
 
-    console.log("[FORWARD_RAW] Sending request:", httpRequest.substring(0, 300));
-    console.log("[FORWARD_RAW] Full request length:", httpRequest.length);
-
-    // Send request
     try {
-      console.log("[FORWARD_RAW] Writing to socket...");
-      await writer.write(new TextEncoder().encode(httpRequest));
-      console.log("[FORWARD_RAW] Write complete, closing writer...");
+      console.log(TAG, "Writing to socket...");
+      await writer.write(encoder.encode(wire));
+      console.log(TAG, "Write complete, closing writer...");
       await writer.close();
-      console.log("[FORWARD_RAW] Writer closed");
-    } catch (writeError) {
-      console.error("[FORWARD_RAW] Write error:", writeError.message);
-      throw writeError;
+      console.log(TAG, "Writer closed");
+    } catch (writeErr) {
+      console.error(TAG, "Write error:", writeErr.message);
+      throw writeErr;
     }
 
-    // Read response with timeout
-    console.log("[FORWARD_RAW] Starting to read response...");
-    let responseData = new Uint8Array(0);
-    let attempts = 0;
-    const maxAttempts = 100; // 10 seconds max
-    
-    while (attempts < maxAttempts) {
-      console.log("[FORWARD_RAW] Reading attempt:", attempts);
-      const { done, value } = await reader.read();
-      console.log("[FORWARD_RAW] Read result - done:", done, "value length:", value?.length);
-      if (done) break;
-      if (value) {
-        const newData = new Uint8Array(responseData.length + value.length);
-        newData.set(responseData);
-        newData.set(value, responseData.length);
-        responseData = newData;
-        
-        // Check if we have complete response (has headers end marker)
-        const text = new TextDecoder().decode(responseData);
-        if (text.includes("\r\n\r\n")) {
-          // Check if we have Content-Length and received all body
-          const headerEnd = text.indexOf("\r\n\r\n");
-          const headers = text.substring(0, headerEnd).toLowerCase();
-          const contentLengthMatch = headers.match(/content-length:\s*(\d+)/);
-          if (contentLengthMatch) {
-            const expectedLength = parseInt(contentLengthMatch[1]);
-            const bodyReceived = text.length - headerEnd - 4;
-            if (bodyReceived >= expectedLength) {
-              console.log("[FORWARD_RAW] Complete response received");
-              break;
-            }
-          }
-        }
-      }
-      attempts++;
-    }
-    
-    console.log("[FORWARD_RAW] Read loop finished, total bytes:", responseData.length);
+    console.log(TAG, "Starting to read response...");
+    const responseBytes = await drainSocket(reader);
+    console.log(TAG, "Read loop finished, total bytes:", responseBytes.length);
 
-    const responseText = new TextDecoder().decode(responseData);
-    console.log("[FORWARD_RAW] Response received:", responseText.substring(0, 500));
+    const responseText = decoder.decode(responseBytes);
+    console.log(TAG, "Response received:", responseText.substring(0, 500));
 
-    // Parse HTTP response
-    const headerEndIndex = responseText.indexOf("\r\n\r\n");
-    if (headerEndIndex === -1) {
-      console.log("[FORWARD_RAW] Full response data:", responseText);
-      throw new Error("Invalid HTTP response - no header end found");
-    }
+    const parsed = parseHttpResponse(responseText);
 
-    const headerPart = responseText.substring(0, headerEndIndex);
-    const bodyPart = responseText.substring(headerEndIndex + 4);
-
-    // Parse status line
-    const statusLine = headerPart.split("\r\n")[0];
-    const statusMatch = statusLine.match(/HTTP\/[\d.]+ (\d+)/);
-    const status = statusMatch ? parseInt(statusMatch[1]) : 200;
-
-    // Parse headers
-    const responseHeaders = {};
-    const headerLines = headerPart.split("\r\n").slice(1);
-    for (const line of headerLines) {
-      const colonIndex = line.indexOf(":");
-      if (colonIndex > 0) {
-        const key = line.substring(0, colonIndex).trim();
-        const value = line.substring(colonIndex + 1).trim();
-        responseHeaders[key.toLowerCase()] = value;
-      }
-    }
-
-    return new Response(bodyPart, {
-      status,
+    return new Response(parsed.body, {
+      status: parsed.status,
       headers: {
-        "Content-Type": responseHeaders["content-type"] || "application/json",
-        "Access-Control-Allow-Origin": "*"
-      }
+        "Content-Type": parsed.headers["content-type"] || "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
     });
-
-  } catch (error) {
-    console.error("[FORWARD_RAW] Error:", error.message, error.stack);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
+  } catch (err) {
+    console.error(TAG, "Error:", err.message, err.stack);
+    return jsonReply({ error: err.message }, 500);
   }
 }
-

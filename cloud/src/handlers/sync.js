@@ -1,227 +1,247 @@
-import * as log from "../utils/logger.js";
-import { getMachineData, saveMachineData, deleteMachineData } from "../services/storage.js";
+// =============================================================================
+// /sync/:machineId — bidirectional provider state sync between Cloud and Web.
+//
+// Strategy: timestamp-based winner-takes-all per provider entry. The Cloud
+// side stores the merged view; Web clients PUSH/PULL through this handler.
+// =============================================================================
 
-const CORS_HEADERS = {
+import * as logger from "../utils/logger.js";
+import {
+  getMachineData,
+  saveMachineData,
+  deleteMachineData,
+} from "../services/storage.js";
+
+const LOG_TAG = "SYNC";
+
+const RESPONSE_HEADERS = Object.freeze({
   "Content-Type": "application/json",
-  "Access-Control-Allow-Origin": "*"
-};
+  "Access-Control-Allow-Origin": "*",
+});
 
-// Removed: WORKER_FIELDS and WORKER_SPECIFIC_FIELDS
-// Now syncing entire provider based on updatedAt (simpler logic)
+const CORS_PREFLIGHT_HEADERS = Object.freeze({
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "*",
+});
 
-export async function handleSync(request, env, ctx) {
-  const url = new URL(request.url);
-  const machineId = url.pathname.split("/")[2]; // /sync/:machineId
+// -----------------------------------------------------------------------------
+// Response helpers
+// -----------------------------------------------------------------------------
 
-  // Handle CORS preflight
-  if (request.method === "OPTIONS") {
-    return new Response(null, {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "*"
-      }
-    });
-  }
-
-  if (!machineId) {
-    log.warn("SYNC", "Missing machineId in path");
-    return jsonResponse({ error: "Missing machineId" }, 400);
-  }
-
-  // Route by method
-  switch (request.method) {
-    case "GET":
-      return handleGet(machineId, env);
-    case "POST":
-      return handlePost(request, machineId, env);
-    case "DELETE":
-      return handleDelete(machineId, env);
-    default:
-      return jsonResponse({ error: "Method not allowed" }, 405);
-  }
+function jsonResponse(payload, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: RESPONSE_HEADERS,
+  });
 }
 
-/**
- * GET /sync/:machineId - Return merged data for Web to update
- */
-async function handleGet(machineId, env) {
-  const data = await getMachineData(machineId, env);
+function preflightResponse() {
+  return new Response(null, { headers: CORS_PREFLIGHT_HEADERS });
+}
 
-  if (!data) {
-    log.warn("SYNC", "No data found", { machineId });
+function extractMachineId(request) {
+  const url = new URL(request.url);
+  // path layout: /sync/:machineId
+  return url.pathname.split("/")[2] || null;
+}
+
+// -----------------------------------------------------------------------------
+// Provider snapshot shape — single source of truth for what we persist.
+// -----------------------------------------------------------------------------
+
+const PROVIDER_FIELDS = Object.freeze([
+  "id",
+  "provider",
+  "authType",
+  "name",
+  "displayName",
+  "email",
+  "priority",
+  "globalPriority",
+  "defaultModel",
+  "accessToken",
+  "refreshToken",
+  "expiresAt",
+  "expiresIn",
+  "tokenType",
+  "scope",
+  "idToken",
+  "projectId",
+  "apiKey",
+  "isActive",
+  "createdAt",
+]);
+
+function snapshotProvider(src) {
+  const out = {};
+  for (const field of PROVIDER_FIELDS) {
+    out[field] = src[field];
+  }
+  out.providerSpecificData = src.providerSpecificData || {};
+  out.status = src.status || "active";
+  out.lastError = src.lastError || null;
+  out.lastErrorAt = src.lastErrorAt || null;
+  out.errorCode = src.errorCode || null;
+  out.rateLimitedUntil = src.rateLimitedUntil || null;
+  out.updatedAt = src.updatedAt || new Date().toISOString();
+  return out;
+}
+
+// -----------------------------------------------------------------------------
+// Merge — pick newest version of a provider entry.
+// -----------------------------------------------------------------------------
+
+function resolveProviderMerge(fromWeb, fromCloud, deltaLog, providerId) {
+  const webStamp = new Date(fromWeb.updatedAt || 0).getTime();
+  const cloudStamp = new Date(fromCloud.updatedAt || 0).getTime();
+
+  const cloudWins = cloudStamp > webStamp;
+  const winner = cloudWins ? fromCloud : fromWeb;
+
+  const snapshot = snapshotProvider(winner);
+  snapshot.updatedAt = new Date().toISOString();
+
+  if (cloudWins) {
+    deltaLog.fromWorker.push(providerId);
+  } else {
+    deltaLog.updated.push(providerId);
+  }
+
+  return snapshot;
+}
+
+// -----------------------------------------------------------------------------
+// Method handlers
+// -----------------------------------------------------------------------------
+
+async function handleGet(machineId, env) {
+  const record = await getMachineData(machineId, env);
+
+  if (!record) {
+    logger.warn(LOG_TAG, "No data found", { machineId });
     return jsonResponse({ error: "No data found" }, 404);
   }
 
-  log.info("SYNC", "Data retrieved", { machineId });
-  return jsonResponse({
-    success: true,
-    data
-  });
+  logger.info(LOG_TAG, "Data retrieved", { machineId });
+  return jsonResponse({ success: true, data: record });
 }
 
-/**
- * POST /sync/:machineId - Merge Web data with Worker data
- * providers stored by ID (supports multiple connections per provider)
- */
 async function handlePost(request, machineId, env) {
-  let body;
+  let payload;
   try {
-    body = await request.json();
+    payload = await request.json();
   } catch {
-    log.warn("SYNC", "Invalid JSON body", { machineId });
+    logger.warn(LOG_TAG, "Invalid JSON body", { machineId });
     return jsonResponse({ error: "Invalid JSON body" }, 400);
   }
 
-  // Validate required fields
-  if (!body.providers || !Array.isArray(body.providers)) {
-    log.warn("SYNC", "Missing or invalid providers array", { machineId });
+  const incomingProviders = payload.providers;
+  if (!incomingProviders || !Array.isArray(incomingProviders)) {
+    logger.warn(LOG_TAG, "Missing or invalid providers array", { machineId });
     return jsonResponse({ error: "Missing providers array" }, 400);
   }
 
-  const existingData = await getMachineData(machineId, env) || { providers: {}, modelAliases: {}, apiKeys: [] };
+  const stored =
+    (await getMachineData(machineId, env)) || {
+      providers: {},
+      modelAliases: {},
+      apiKeys: [],
+    };
 
-  // Merge providers by ID
   const mergedProviders = {};
-  const changes = { updated: [], fromWorker: [] };
+  const deltaLog = { updated: [], fromWorker: [] };
 
-  for (const webProvider of body.providers) {
-    const providerId = webProvider.id;
-    if (!providerId) {
-      log.warn("SYNC", "Provider missing id", { provider: webProvider.provider });
+  for (const incoming of incomingProviders) {
+    const pid = incoming.id;
+    if (!pid) {
+      logger.warn(LOG_TAG, "Provider missing id", { provider: incoming.provider });
       continue;
     }
 
-    const workerProvider = existingData.providers[providerId];
-
-    if (workerProvider) {
-      // Merge: token fields from Worker, config fields from Web
-      mergedProviders[providerId] = mergeProvider(webProvider, workerProvider, changes, providerId);
-    } else {
-      // New provider from Web
-      mergedProviders[providerId] = formatProviderData(webProvider);
-      changes.updated.push(providerId);
+    const existing = stored.providers[pid];
+    if (!existing) {
+      mergedProviders[pid] = snapshotProvider(incoming);
+      deltaLog.updated.push(pid);
+      continue;
     }
+
+    mergedProviders[pid] = resolveProviderMerge(incoming, existing, deltaLog, pid);
   }
 
-  // Prepare final data - modelAliases, apiKeys, combos always from Web
-  const finalData = {
+  const finalDoc = {
     providers: mergedProviders,
-    modelAliases: body.modelAliases || existingData.modelAliases || {},
-    combos: body.combos || existingData.combos || [],
-    apiKeys: body.apiKeys || existingData.apiKeys || [],
-    updatedAt: new Date().toISOString()
+    modelAliases: payload.modelAliases || stored.modelAliases || {},
+    combos: payload.combos || stored.combos || [],
+    apiKeys: payload.apiKeys || stored.apiKeys || [],
+    updatedAt: new Date().toISOString(),
   };
 
-  // Store in D1 + invalidate cache
-  await saveMachineData(machineId, finalData, env);
+  await saveMachineData(machineId, finalDoc, env);
 
-  log.info("SYNC", "Data synced successfully", {
+  logger.info(LOG_TAG, "Data synced successfully", {
     machineId,
     providerCount: Object.keys(mergedProviders).length,
-    changes
+    changes: deltaLog,
   });
 
   return jsonResponse({
     success: true,
-    data: finalData,
-    changes
+    data: finalDoc,
+    changes: deltaLog,
   });
 }
 
-/**
- * DELETE /sync/:machineId - Clear cache when Worker is disabled
- */
 async function handleDelete(machineId, env) {
   await deleteMachineData(machineId, env);
-
-  log.info("SYNC", "Data deleted", { machineId });
+  logger.info(LOG_TAG, "Data deleted", { machineId });
   return jsonResponse({
     success: true,
-    message: "Data deleted successfully"
+    message: "Data deleted successfully",
   });
 }
 
-/**
- * Merge provider data: compare updatedAt to decide which source to use
- * Simple logic: newer wins (sync entire provider)
- */
-function mergeProvider(webProvider, workerProvider, changes, providerId) {
-  const webTime = new Date(webProvider.updatedAt || 0).getTime();
-  const workerTime = new Date(workerProvider.updatedAt || 0).getTime();
+// -----------------------------------------------------------------------------
+// Method dispatch table — replaces the procedural switch in the original.
+// -----------------------------------------------------------------------------
 
-  let merged;
-  
-  if (workerTime > webTime) {
-    // Cloud has newer data - use entire Cloud provider
-    merged = formatProviderData(workerProvider);
-    changes.fromWorker.push(providerId);
-  } else {
-    // Server has newer data - use entire Server provider
-    merged = formatProviderData(webProvider);
-    changes.updated.push(providerId);
+const METHOD_TABLE = {
+  GET: (req, machineId, env) => handleGet(machineId, env),
+  POST: (req, machineId, env) => handlePost(req, machineId, env),
+  DELETE: (req, machineId, env) => handleDelete(machineId, env),
+};
+
+// -----------------------------------------------------------------------------
+// Public exports
+// -----------------------------------------------------------------------------
+
+export async function handleSync(request, env, ctx) {
+  if (request.method === "OPTIONS") return preflightResponse();
+
+  const machineId = extractMachineId(request);
+  if (!machineId) {
+    logger.warn(LOG_TAG, "Missing machineId in path");
+    return jsonResponse({ error: "Missing machineId" }, 400);
   }
 
-  // Always update timestamp
-  merged.updatedAt = new Date().toISOString();
-  return merged;
+  const dispatcher = METHOD_TABLE[request.method];
+  if (!dispatcher) {
+    return jsonResponse({ error: "Method not allowed" }, 405);
+  }
+
+  return dispatcher(request, machineId, env);
 }
 
-/**
- * Format provider data for storage
- */
-function formatProviderData(provider) {
-  return {
-    id: provider.id,
-    provider: provider.provider,
-    authType: provider.authType,
-    name: provider.name,
-    displayName: provider.displayName,
-    email: provider.email,
-    priority: provider.priority,
-    globalPriority: provider.globalPriority,
-    defaultModel: provider.defaultModel,
-    accessToken: provider.accessToken,
-    refreshToken: provider.refreshToken,
-    expiresAt: provider.expiresAt,
-    expiresIn: provider.expiresIn,
-    tokenType: provider.tokenType,
-    scope: provider.scope,
-    idToken: provider.idToken,
-    projectId: provider.projectId,
-    apiKey: provider.apiKey,
-    providerSpecificData: provider.providerSpecificData || {},
-    isActive: provider.isActive,
-    status: provider.status || "active",
-    lastError: provider.lastError || null,
-    lastErrorAt: provider.lastErrorAt || null,
-    errorCode: provider.errorCode || null,
-    rateLimitedUntil: provider.rateLimitedUntil || null,
-    createdAt: provider.createdAt,
-    updatedAt: provider.updatedAt || new Date().toISOString()
-  };
-}
-
-/**
- * Update provider status (called when token refresh fails or API errors)
- */
 export function updateProviderStatus(providers, providerId, status, error = null, errorCode = null) {
-  if (providers[providerId]) {
-    providers[providerId].status = status;
-    providers[providerId].lastError = error;
-    providers[providerId].lastErrorAt = error ? new Date().toISOString() : null;
-    providers[providerId].errorCode = errorCode;
-    providers[providerId].updatedAt = new Date().toISOString();
-  }
-  return providers;
-}
+  const target = providers[providerId];
+  if (!target) return providers;
 
-/**
- * Helper to create JSON response
- */
-function jsonResponse(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: CORS_HEADERS
-  });
+  const nowIso = new Date().toISOString();
+  target.status = status;
+  target.lastError = error;
+  target.lastErrorAt = error ? nowIso : null;
+  target.errorCode = errorCode;
+  target.updatedAt = nowIso;
+
+  return providers;
 }
