@@ -1,171 +1,304 @@
-﻿// Inline stdio<->SSE bridge for MCP. Spawns one child per plugin on demand,
-// broadcasts JSON-RPC frames over SSE, accepts client messages via HTTP POST.
+/*
+ * MCP stdio<->SSE bridge (inline implementation).
+ *
+ * Lifecycle: a single child process per plugin is lazily spawned the first
+ * time someone asks for it. Frames coming back from the child are
+ * newline-delimited JSON-RPC; we relay each one to every attached SSE
+ * subscriber. Inbound client traffic arrives via HTTP POST and is forwarded
+ * to the child's stdin.
+ */
 
-const { spawn } = require("child_process");
-const fs = require("fs");
-const path = require("path");
-const crypto = require("crypto");
+const { spawn: spawnChild } = require("child_process");
+const fsModule = require("fs");
+const pathModule = require("path");
+const { randomUUID } = require("crypto");
 const { LOCAL_STDIO_PLUGINS } = require("@/shared/constants/coworkPlugins");
 const { DATA_DIR } = require("@/lib/dataDir");
 
-const CUSTOM_FILE = path.join(DATA_DIR, "mcp", "customPlugins.json");
+// ---------------------------------------------------------------------------
+// Constants & module-level config
+// ---------------------------------------------------------------------------
 
+const CUSTOM_FILE = pathModule.join(DATA_DIR, "mcp", "customPlugins.json");
+
+// IMPORTANT: globalThis key consumed by sibling modules — do not rename.
 const G_KEY = "__LinaRouterMcpBridges";
+const CUSTOM_GLOBAL_KEY = "__LinaRouterCustomPlugins";
+
 const MAX_TEXT_CHARS = 50000;
 const COLLAPSE_THRESHOLD = 30;
 const COLLAPSE_KEEP_HEAD = 10;
 const COLLAPSE_KEEP_TAIL = 5;
 
-// Drop noise nodes, collapse repeated siblings, hard-truncate. Preserve [ref=eXX].
-function smartFilterText(text) {
-  if (typeof text !== "string" || text.length < 2000) return text;
-  let out = text;
-  out = out.replace(/^\s*-\s*generic:?\s*$/gm, "");
-  out = out.replace(/^\s*-\s*text:\s*""\s*$/gm, "");
-  out = collapseRepeated(out);
-  if (out.length > MAX_TEXT_CHARS) {
-    const head = out.slice(0, MAX_TEXT_CHARS - 300);
-    out = `${head}\n\n... [truncated ${text.length - head.length} chars by LINA Router bridge. Page is large; ask user to scroll/navigate to a specific section, or click an element with the refs shown above]`;
-  }
-  return out;
+const ROLE_LINE_RX = /^(\s*)-\s*([a-zA-Z]+)\b/;
+const NOISE_GENERIC_RX = /^\s*-\s*generic:?\s*$/gm;
+const NOISE_EMPTY_TEXT_RX = /^\s*-\s*text:\s*""\s*$/gm;
+
+// ---------------------------------------------------------------------------
+// Global store accessors (lazy-init the maps on globalThis)
+// ---------------------------------------------------------------------------
+
+function getStore() {
+  const existing = globalThis[G_KEY];
+  if (existing) return existing;
+  const fresh = new Map();
+  globalThis[G_KEY] = fresh;
+  return fresh;
 }
 
-// Group consecutive lines sharing the same leading indent + role prefix; collapse if >= COLLAPSE_THRESHOLD.
-function collapseRepeated(text) {
-  const lines = text.split("\n");
-  const out = [];
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    const m = line.match(/^(\s*)-\s*([a-zA-Z]+)\b/);
-    if (!m) { out.push(line); i++; continue; }
-    const indent = m[1];
-    const role = m[2];
-    let j = i;
-    while (j < lines.length) {
-      const ln = lines[j];
-      const mm = ln.match(/^(\s*)-\s*([a-zA-Z]+)\b/);
-      if (mm && mm[1] === indent && mm[2] === role) { j++; continue; }
-      if (ln.startsWith(`${indent} `) || ln.startsWith(`${indent}\t`)) { j++; continue; }
-      break;
-    }
-    const groupLen = j - i;
-    if (groupLen >= COLLAPSE_THRESHOLD) {
-      const headEnd = findNthSiblingEnd(lines, i, indent, role, COLLAPSE_KEEP_HEAD);
-      const tailStart = findLastNSiblingStart(lines, j, indent, role, COLLAPSE_KEEP_TAIL);
-      for (let k = i; k < headEnd; k++) out.push(lines[k]);
-      out.push(`${indent}... [${groupLen - COLLAPSE_KEEP_HEAD - COLLAPSE_KEEP_TAIL} similar "${role}" items omitted by LINA Router bridge]`);
-      for (let k = tailStart; k < j; k++) out.push(lines[k]);
-    } else {
-      for (let k = i; k < j; k++) out.push(lines[k]);
-    }
-    i = j;
-  }
-  return out.join("\n");
+function getCustomStore() {
+  const existing = globalThis[CUSTOM_GLOBAL_KEY];
+  if (existing) return existing;
+  const fresh = new Map();
+  globalThis[CUSTOM_GLOBAL_KEY] = fresh;
+  return fresh;
 }
 
-function findNthSiblingEnd(lines, start, indent, role, n) {
-  let count = 0;
-  for (let k = start; k < lines.length; k++) {
-    const mm = lines[k].match(/^(\s*)-\s*([a-zA-Z]+)\b/);
-    if (mm && mm[1] === indent && mm[2] === role) {
-      count++;
-      if (count > n) return k;
-    }
-  }
-  return lines.length;
-}
-
-function findLastNSiblingStart(lines, end, indent, role, n) {
-  const positions = [];
-  for (let k = 0; k < end; k++) {
-    const mm = lines[k].match(/^(\s*)-\s*([a-zA-Z]+)\b/);
-    if (mm && mm[1] === indent && mm[2] === role) positions.push(k);
-  }
-  return positions.length > n ? positions[positions.length - n] : end;
-}
-
-// Apply filter to JSON-RPC tool/result content text blocks only.
-function filterFrame(line) {
-  try {
-    const msg = JSON.parse(line);
-    const content = msg?.result?.content;
-    if (!Array.isArray(content)) return line;
-    let mutated = false;
-    for (const item of content) {
-      if (item?.type === "text" && typeof item.text === "string") {
-        const filtered = smartFilterText(item.text);
-        if (filtered !== item.text) { item.text = filtered; mutated = true; }
-      }
-    }
-    return mutated ? JSON.stringify(msg) : line;
-  } catch { return line; }
-}
-const getStore = () => {
-  if (!globalThis[G_KEY]) globalThis[G_KEY] = new Map();
-  return globalThis[G_KEY];
-};
-
-const getCustomStore = () => {
-  if (!globalThis.__LinaRouterCustomPlugins) globalThis.__LinaRouterCustomPlugins = new Map();
-  return globalThis.__LinaRouterCustomPlugins;
-};
+// ---------------------------------------------------------------------------
+// Plugin resolution
+// ---------------------------------------------------------------------------
 
 function registerCustomPlugin(def) {
   getCustomStore().set(def.name, def);
 }
 
-function findPlugin(name) {
-  const fromMem = getCustomStore().get(name) || LOCAL_STDIO_PLUGINS.find((p) => p.name === name);
-  if (fromMem) return fromMem;
-  // Lazy-load custom plugins from disk (survives app restart).
+function loadCustomFromDisk(name) {
+  // Custom plugins live on disk so they survive a process restart.
   try {
-    const list = JSON.parse(fs.readFileSync(CUSTOM_FILE, "utf-8"));
-    const def = Array.isArray(list) ? list.find((p) => p.name === name && p.command) : null;
-    if (def) { getCustomStore().set(def.name, def); return def; }
-  } catch { /* file missing or invalid */ }
-  return null;
+    const raw = fsModule.readFileSync(CUSTOM_FILE, "utf-8");
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    const match = parsed.find((p) => p.name === name && p.command);
+    if (!match) return null;
+    getCustomStore().set(match.name, match);
+    return match;
+  } catch {
+    // Missing/corrupt file is fine — caller will handle a null result.
+    return null;
+  }
 }
 
-function getOrSpawn(name) {
-  const store = getStore();
-  let entry = store.get(name);
-  if (entry?.proc && !entry.proc.killed && entry.proc.exitCode === null) return entry;
+function findPlugin(name) {
+  const inMemory = getCustomStore().get(name)
+    || LOCAL_STDIO_PLUGINS.find((p) => p.name === name);
+  if (inMemory) return inMemory;
+  return loadCustomFromDisk(name);
+}
 
-  const plugin = findPlugin(name);
-  if (!plugin) throw new Error(`Unknown local plugin: ${name}`);
+// ---------------------------------------------------------------------------
+// Repetition collapse / noise stripping for SSE text payloads
+// ---------------------------------------------------------------------------
 
-  const proc = spawn(plugin.command, plugin.args, { stdio: ["pipe", "pipe", "pipe"], env: process.env });
-  entry = { proc, sessions: new Map(), buffer: "" };
-  store.set(name, entry);
+function locateHeadCutoff(lines, fromIdx, indent, role, keepN) {
+  let seen = 0;
+  for (let k = fromIdx; k < lines.length; k++) {
+    const hit = lines[k].match(ROLE_LINE_RX);
+    if (!hit) continue;
+    if (hit[1] !== indent || hit[2] !== role) continue;
+    seen++;
+    if (seen > keepN) return k;
+  }
+  return lines.length;
+}
 
-  // Parse newline-delimited JSON-RPC from child stdout, broadcast to all sessions.
-  proc.stdout.on("data", (chunk) => {
+function locateTailStart(lines, untilIdx, indent, role, keepN) {
+  const hits = [];
+  for (let k = 0; k < untilIdx; k++) {
+    const hit = lines[k].match(ROLE_LINE_RX);
+    if (hit && hit[1] === indent && hit[2] === role) hits.push(k);
+  }
+  if (hits.length <= keepN) return untilIdx;
+  return hits[hits.length - keepN];
+}
+
+/*
+ * Walk the line array. When we encounter a "- role" entry we look ahead to
+ * find the run of consecutive siblings sharing the same indent + role
+ * (children belonging to those siblings count as part of the run). If the
+ * run is large enough we keep COLLAPSE_KEEP_HEAD entries up front and
+ * COLLAPSE_KEEP_TAIL entries at the end, replacing the middle with a
+ * placeholder line.
+ */
+function collapseRepeated(text) {
+  const lines = text.split("\n");
+  const result = [];
+  let cursor = 0;
+
+  while (cursor < lines.length) {
+    const startLine = lines[cursor];
+    const header = startLine.match(ROLE_LINE_RX);
+
+    if (!header) {
+      result.push(startLine);
+      cursor++;
+      continue;
+    }
+
+    const indent = header[1];
+    const role = header[2];
+    let probe = cursor;
+
+    while (probe < lines.length) {
+      const ln = lines[probe];
+      const ph = ln.match(ROLE_LINE_RX);
+      const isSibling = ph && ph[1] === indent && ph[2] === role;
+      const isChildOfSibling = ln.startsWith(`${indent} `) || ln.startsWith(`${indent}\t`);
+      if (isSibling || isChildOfSibling) {
+        probe++;
+        continue;
+      }
+      break;
+    }
+
+    const span = probe - cursor;
+
+    if (span < COLLAPSE_THRESHOLD) {
+      for (let k = cursor; k < probe; k++) result.push(lines[k]);
+      cursor = probe;
+      continue;
+    }
+
+    const headCut = locateHeadCutoff(lines, cursor, indent, role, COLLAPSE_KEEP_HEAD);
+    const tailCut = locateTailStart(lines, probe, indent, role, COLLAPSE_KEEP_TAIL);
+    const omitted = span - COLLAPSE_KEEP_HEAD - COLLAPSE_KEEP_TAIL;
+
+    for (let k = cursor; k < headCut; k++) result.push(lines[k]);
+    result.push(`${indent}... [${omitted} similar "${role}" items omitted by LINA Router bridge]`);
+    for (let k = tailCut; k < probe; k++) result.push(lines[k]);
+
+    cursor = probe;
+  }
+
+  return result.join("\n");
+}
+
+/*
+ * Public-ish helper used by filterFrame. Cheap fast-path for short text
+ * (the common case), then noise stripping, then collapse, then a hard
+ * character ceiling. The [ref=eXX] anchor convention from the upstream
+ * accessibility snapshots is left intact.
+ */
+function smartFilterText(text) {
+  if (typeof text !== "string") return text;
+  if (text.length < 2000) return text;
+
+  let working = text
+    .replace(NOISE_GENERIC_RX, "")
+    .replace(NOISE_EMPTY_TEXT_RX, "");
+
+  working = collapseRepeated(working);
+
+  if (working.length > MAX_TEXT_CHARS) {
+    const sliced = working.slice(0, MAX_TEXT_CHARS - 300);
+    const dropped = text.length - sliced.length;
+    working = `${sliced}\n\n... [truncated ${dropped} chars by LINA Router bridge. Page is large; ask user to scroll/navigate to a specific section, or click an element with the refs shown above]`;
+  }
+
+  return working;
+}
+
+/*
+ * Only result.content[].text segments get rewritten. If nothing changed we
+ * return the original buffer to avoid a JSON re-serialization round-trip.
+ * Anything we can't parse is passed through unmodified.
+ */
+function filterFrame(line) {
+  let msg;
+  try {
+    msg = JSON.parse(line);
+  } catch {
+    return line;
+  }
+
+  const content = msg && msg.result && msg.result.content;
+  if (!Array.isArray(content)) return line;
+
+  const changed = content.reduce((acc, item) => {
+    if (!item || item.type !== "text" || typeof item.text !== "string") return acc;
+    const next = smartFilterText(item.text);
+    if (next === item.text) return acc;
+    item.text = next;
+    return true;
+  }, false);
+
+  return changed ? JSON.stringify(msg) : line;
+}
+
+// ---------------------------------------------------------------------------
+// Process lifecycle
+// ---------------------------------------------------------------------------
+
+function isEntryAlive(entry) {
+  if (!entry || !entry.proc) return false;
+  if (entry.proc.killed) return false;
+  return entry.proc.exitCode === null;
+}
+
+function attachStdoutPipe(entry, name) {
+  // The child emits newline-delimited JSON-RPC. We accumulate partial
+  // chunks in entry.buffer and flush whole frames as they complete.
+  entry.proc.stdout.on("data", (chunk) => {
     entry.buffer += chunk.toString("utf8");
-    let idx;
-    while ((idx = entry.buffer.indexOf("\n")) >= 0) {
-      const raw = entry.buffer.slice(0, idx).trim();
-      entry.buffer = entry.buffer.slice(idx + 1);
+    let nlAt;
+    while ((nlAt = entry.buffer.indexOf("\n")) >= 0) {
+      const raw = entry.buffer.slice(0, nlAt).trim();
+      entry.buffer = entry.buffer.slice(nlAt + 1);
       if (!raw) continue;
-      const line = filterFrame(raw);
+      const payload = filterFrame(raw);
       for (const send of entry.sessions.values()) {
-        try { send(`event: message\ndata: ${line}\n\n`); } catch { /* ignore broken pipe */ }
+        try {
+          send(`event: message\ndata: ${payload}\n\n`);
+        } catch {
+          // Swallow — a single broken pipe shouldn't poison the fan-out.
+        }
       }
     }
   });
 
-  proc.stderr.on("data", (d) => console.log(`[mcp:${name}]`, d.toString().trim()));
-  proc.on("exit", (code) => {
-    console.log(`[mcp:${name}] exited`, code);
-    store.delete(name);
+  entry.proc.stderr.on("data", (d) => {
+    console.log(`[mcp:${name}]`, d.toString().trim());
   });
 
+  entry.proc.on("exit", (code) => {
+    console.log(`[mcp:${name}] exited`, code);
+    getStore().delete(name);
+  });
+}
+
+function getOrSpawn(name) {
+  const store = getStore();
+  const cached = store.get(name);
+  if (isEntryAlive(cached)) return cached;
+
+  const plugin = findPlugin(name);
+  if (!plugin) throw new Error(`Unknown local plugin: ${name}`);
+
+  const proc = spawnChild(plugin.command, plugin.args, {
+    stdio: ["pipe", "pipe", "pipe"],
+    env: process.env,
+  });
+
+  const entry = {
+    proc,
+    sessions: new Map(),
+    buffer: "",
+  };
+  store.set(name, entry);
+  attachStdoutPipe(entry, name);
   return entry;
 }
 
+function isRunning(name) {
+  return isEntryAlive(getStore().get(name));
+}
+
+// ---------------------------------------------------------------------------
+// Session + message plumbing (consumed by the /api/mcp/[plugin]/* routes)
+// ---------------------------------------------------------------------------
+
 function registerSession(name, sendFn) {
   const entry = getOrSpawn(name);
-  const sid = crypto.randomUUID();
+  const sid = randomUUID();
   entry.sessions.set(sid, sendFn);
   return sid;
 }
@@ -178,14 +311,21 @@ function unregisterSession(name, sid) {
 
 function sendToChild(name, jsonRpc) {
   const entry = getStore().get(name);
-  if (!entry?.proc?.stdin?.writable) throw new Error(`Bridge not running: ${name}`);
-  entry.proc.stdin.write(`${JSON.stringify(jsonRpc)}\n`);
+  const stdin = entry && entry.proc && entry.proc.stdin;
+  if (!stdin || !stdin.writable) throw new Error(`Bridge not running: ${name}`);
+  stdin.write(`${JSON.stringify(jsonRpc)}\n`);
 }
 
-function isRunning(name) {
-  const entry = getStore().get(name);
-  return !!(entry?.proc && !entry.proc.killed && entry.proc.exitCode === null);
-}
+// ---------------------------------------------------------------------------
+// Exports
+// ---------------------------------------------------------------------------
 
-module.exports = { getOrSpawn, registerSession, unregisterSession, sendToChild, isRunning, findPlugin, registerCustomPlugin };
-
+module.exports = {
+  getOrSpawn,
+  registerSession,
+  unregisterSession,
+  sendToChild,
+  isRunning,
+  findPlugin,
+  registerCustomPlugin,
+};

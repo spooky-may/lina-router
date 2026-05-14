@@ -1,161 +1,286 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
-const DEFAULT_MAX_RECORDS = 200;
-const DEFAULT_BATCH_SIZE = 20;
-const DEFAULT_FLUSH_INTERVAL_MS = 5000;
-const DEFAULT_MAX_JSON_SIZE = 5 * 1024;
-const CONFIG_CACHE_TTL_MS = 5000;
+/*
+ * Persistence layer for per-request observability records.
+ *
+ * Writes are coalesced into a small in-memory queue and committed in
+ * batches via SQLite transactions. A short-lived configuration cache
+ * avoids re-reading user settings on every push.
+ */
 
-let cachedConfig = null;
-let cachedConfigTs = 0;
+// --- Fallback tuning knobs (used when settings are unavailable) ---
+const FALLBACK = Object.freeze({
+  maxRecords: 200,
+  batchSize: 20,
+  flushIntervalMs: 5000,
+  maxJsonSize: 5 * 1024,
+});
 
-async function getObservabilityConfig() {
-  if (cachedConfig && (Date.now() - cachedConfigTs) < CONFIG_CACHE_TTL_MS) return cachedConfig;
+const SETTINGS_CACHE_LIFETIME_MS = 5000;
+const LOG_TAG = "[requestDetailsRepo]";
+
+// Header keys that should never be persisted (substring match, case-insensitive)
+const REDACTED_HEADER_NEEDLES = [
+  "authorization",
+  "x-api-key",
+  "cookie",
+  "token",
+  "api-key",
+];
+
+// ---------------------------------------------------------------------------
+// Settings snapshot — memoised for a few seconds to keep the hot path cheap.
+// ---------------------------------------------------------------------------
+const settingsCache = {
+  value: null,
+  fetchedAt: 0,
+};
+
+const intFromEnv = (envKey, fallback) =>
+  parseInt(process.env[envKey] || String(fallback), 10);
+
+async function readEffectiveConfig() {
+  const now = Date.now();
+  if (settingsCache.value && now - settingsCache.fetchedAt < SETTINGS_CACHE_LIFETIME_MS) {
+    return settingsCache.value;
+  }
+
+  let snapshot;
   try {
     const { getSettings } = await import("./settingsRepo.js");
-    const settings = await getSettings();
-    const envEnabled = process.env.OBSERVABILITY_ENABLED !== "false";
-    const enabled = typeof settings.enableObservability === "boolean"
-      ? settings.enableObservability
-      : envEnabled;
-    cachedConfig = {
-      enabled,
-      maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
-      batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
-      flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
-      maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
+    const userSettings = await getSettings();
+
+    const envSaysOn = process.env.OBSERVABILITY_ENABLED !== "false";
+    const enabledFlag = typeof userSettings.enableObservability === "boolean"
+      ? userSettings.enableObservability
+      : envSaysOn;
+
+    snapshot = {
+      enabled: enabledFlag,
+      maxRecords: userSettings.observabilityMaxRecords
+        || intFromEnv("OBSERVABILITY_MAX_RECORDS", FALLBACK.maxRecords),
+      batchSize: userSettings.observabilityBatchSize
+        || intFromEnv("OBSERVABILITY_BATCH_SIZE", FALLBACK.batchSize),
+      flushIntervalMs: userSettings.observabilityFlushIntervalMs
+        || intFromEnv("OBSERVABILITY_FLUSH_INTERVAL_MS", FALLBACK.flushIntervalMs),
+      maxJsonSize: (userSettings.observabilityMaxJsonSize
+        || intFromEnv("OBSERVABILITY_MAX_JSON_SIZE", 5)) * 1024,
     };
   } catch {
-    cachedConfig = {
-      enabled: false,
-      maxRecords: DEFAULT_MAX_RECORDS,
-      batchSize: DEFAULT_BATCH_SIZE,
-      flushIntervalMs: DEFAULT_FLUSH_INTERVAL_MS,
-      maxJsonSize: DEFAULT_MAX_JSON_SIZE,
-    };
+    // If settings cannot be loaded we silently disable observability.
+    snapshot = { enabled: false, ...FALLBACK };
   }
-  cachedConfigTs = Date.now();
-  return cachedConfig;
+
+  settingsCache.value = snapshot;
+  settingsCache.fetchedAt = now;
+  return snapshot;
 }
 
-let writeBuffer = [];
-let flushTimer = null;
-let isFlushing = false;
+// ---------------------------------------------------------------------------
+// In-memory queue state.
+// ---------------------------------------------------------------------------
+const queueState = {
+  pending: [],
+  timerHandle: null,
+  draining: false,
+};
 
-function sanitizeHeaders(headers) {
-  if (!headers || typeof headers !== "object") return {};
-  const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token", "api-key"];
-  const sanitized = { ...headers };
-  for (const key of Object.keys(sanitized)) {
-    if (sensitiveKeys.some((s) => key.toLowerCase().includes(s))) delete sanitized[key];
+// ---------------------------------------------------------------------------
+// Small pure helpers.
+// ---------------------------------------------------------------------------
+function stripSensitiveHeaders(headerMap) {
+  if (!headerMap || typeof headerMap !== "object") return {};
+
+  const cloned = { ...headerMap };
+  const isSecret = (name) => {
+    const lower = name.toLowerCase();
+    return REDACTED_HEADER_NEEDLES.some((needle) => lower.includes(needle));
+  };
+
+  Object.keys(cloned)
+    .filter(isSecret)
+    .forEach((name) => { delete cloned[name]; });
+
+  return cloned;
+}
+
+function mintRecordId(modelName) {
+  const isoNow = new Date().toISOString();
+  const randomSlug = Math.random().toString(36).substring(2, 8);
+  const safeModel = modelName
+    ? modelName.replace(/[^a-zA-Z0-9-]/g, "-")
+    : "unknown";
+  return `${isoNow}-${randomSlug}-${safeModel}`;
+}
+
+function clampJsonPayload(payload, byteCap) {
+  const serialised = JSON.stringify(payload || {});
+  if (serialised.length <= byteCap) return payload || {};
+  return {
+    _truncated: true,
+    _originalSize: serialised.length,
+    _preview: serialised.substring(0, 200),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Per-item normalisation. Mutates the incoming detail (matches prior
+// behaviour where the queued object is filled in lazily).
+// ---------------------------------------------------------------------------
+function normaliseDetail(detail) {
+  if (!detail.id) detail.id = mintRecordId(detail.model);
+  if (!detail.timestamp) detail.timestamp = new Date().toISOString();
+  if (detail.request?.headers) {
+    detail.request.headers = stripSensitiveHeaders(detail.request.headers);
   }
-  return sanitized;
 }
 
-function generateDetailId(model) {
-  const timestamp = new Date().toISOString();
-  const random = Math.random().toString(36).substring(2, 8);
-  const modelPart = model ? model.replace(/[^a-zA-Z0-9-]/g, "-") : "unknown";
-  return `${timestamp}-${random}-${modelPart}`;
+function buildPersistableRow(detail, byteCap) {
+  return {
+    id: detail.id,
+    provider: detail.provider || null,
+    model: detail.model || null,
+    connectionId: detail.connectionId || null,
+    timestamp: detail.timestamp,
+    status: detail.status || null,
+    latency: detail.latency || {},
+    tokens: detail.tokens || {},
+    request: clampJsonPayload(detail.request, byteCap),
+    providerRequest: clampJsonPayload(detail.providerRequest, byteCap),
+    providerResponse: clampJsonPayload(detail.providerResponse, byteCap),
+    response: clampJsonPayload(detail.response, byteCap),
+  };
 }
 
-function truncateField(obj, maxSize) {
-  const str = JSON.stringify(obj || {});
-  if (str.length > maxSize) {
-    return { _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) };
-  }
-  return obj || {};
-}
+const UPSERT_SQL = `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`;
+const COUNT_SQL = `SELECT COUNT(*) as c FROM requestDetails`;
+const TRIM_SQL = `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`;
 
-async function flushToDatabase() {
-  if (isFlushing) return;
-  if (writeBuffer.length === 0) return;
-  isFlushing = true;
-  try {
-    // Drain entire buffer (loop in case more pushed during await)
-    while (writeBuffer.length > 0) {
-      const items = writeBuffer.splice(0, writeBuffer.length);
-      const db = await getAdapter();
-      const config = await getObservabilityConfig();
-
-      db.transaction(() => {
-        for (const item of items) {
-          if (!item.id) item.id = generateDetailId(item.model);
-          if (!item.timestamp) item.timestamp = new Date().toISOString();
-          if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
-
-          const record = {
-            id: item.id,
-            provider: item.provider || null,
-            model: item.model || null,
-            connectionId: item.connectionId || null,
-            timestamp: item.timestamp,
-            status: item.status || null,
-            latency: item.latency || {},
-            tokens: item.tokens || {},
-            request: truncateField(item.request, config.maxJsonSize),
-            providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
-            providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
-            response: truncateField(item.response, config.maxJsonSize),
-          };
-
-          db.run(
-            `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
-            [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)]
-          );
-        }
-
-        const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
-        if (cnt && cnt.c > config.maxRecords) {
-          db.run(
-            `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
-            [cnt.c - config.maxRecords]
-          );
-        }
-      });
+function commitBatch(db, batch, cfg) {
+  db.transaction(() => {
+    for (const detail of batch) {
+      normaliseDetail(detail);
+      const row = buildPersistableRow(detail, cfg.maxJsonSize);
+      db.run(UPSERT_SQL, [
+        row.id,
+        row.timestamp,
+        row.provider,
+        row.model,
+        row.connectionId,
+        row.status,
+        stringifyJson(row),
+      ]);
     }
-  } catch (e) {
-    console.error("[requestDetailsRepo] Batch write failed:", e);
+
+    // Enforce the rolling retention window.
+    const countRow = db.get(COUNT_SQL);
+    const total = countRow ? countRow.c : 0;
+    if (total > cfg.maxRecords) {
+      db.run(TRIM_SQL, [total - cfg.maxRecords]);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Drain the queue. New items pushed mid-flush are also handled by the loop.
+// ---------------------------------------------------------------------------
+async function drainQueue() {
+  if (queueState.draining || queueState.pending.length === 0) return;
+  queueState.draining = true;
+
+  try {
+    while (queueState.pending.length > 0) {
+      const batch = queueState.pending.splice(0, queueState.pending.length);
+      const db = await getAdapter();
+      const cfg = await readEffectiveConfig();
+      commitBatch(db, batch, cfg);
+    }
+  } catch (err) {
+    console.error(`${LOG_TAG} Batch write failed:`, err);
   } finally {
-    isFlushing = false;
+    queueState.draining = false;
   }
 }
 
+function scheduleDeferredFlush(delayMs) {
+  if (queueState.timerHandle) return;
+  queueState.timerHandle = setTimeout(() => {
+    queueState.timerHandle = null;
+    drainQueue().catch(() => { /* swallow — already logged inside drainQueue */ });
+  }, delayMs);
+}
+
+function cancelDeferredFlush() {
+  if (!queueState.timerHandle) return;
+  clearTimeout(queueState.timerHandle);
+  queueState.timerHandle = null;
+}
+
+// ---------------------------------------------------------------------------
+// Public API.
+// ---------------------------------------------------------------------------
 export async function saveRequestDetail(detail) {
-  const config = await getObservabilityConfig();
-  if (!config.enabled) return;
+  const cfg = await readEffectiveConfig();
+  if (!cfg.enabled) return;
 
-  writeBuffer.push(detail);
+  queueState.pending.push(detail);
 
-  // Trigger immediate flush if batch threshold reached.
-  // flushToDatabase() drains entire buffer in a loop, so all pushes during await are persisted.
-  if (writeBuffer.length >= config.batchSize) {
-    if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-    flushToDatabase().catch((e) => console.error("[requestDetailsRepo] flush err:", e));
-  } else if (!flushTimer) {
-    flushTimer = setTimeout(() => {
-      flushTimer = null;
-      flushToDatabase().catch(() => {});
-    }, config.flushIntervalMs);
+  // If the batch threshold has been crossed, kick off a flush right away.
+  // drainQueue keeps looping while items keep arriving, so anything pushed
+  // while we await the adapter will still be persisted.
+  if (queueState.pending.length >= cfg.batchSize) {
+    cancelDeferredFlush();
+    drainQueue().catch((err) => console.error(`${LOG_TAG} flush err:`, err));
+    return;
   }
+
+  scheduleDeferredFlush(cfg.flushIntervalMs);
+}
+
+// ---------------------------------------------------------------------------
+// Reads.
+// ---------------------------------------------------------------------------
+function buildWhereClause(filter) {
+  const fragments = [];
+  const bindings = [];
+
+  const eqFilters = [
+    ["provider", filter.provider],
+    ["model", filter.model],
+    ["connectionId", filter.connectionId],
+    ["status", filter.status],
+  ];
+
+  for (const [col, val] of eqFilters) {
+    if (val) {
+      fragments.push(`${col} = ?`);
+      bindings.push(val);
+    }
+  }
+
+  if (filter.startDate) {
+    fragments.push("timestamp >= ?");
+    bindings.push(new Date(filter.startDate).toISOString());
+  }
+  if (filter.endDate) {
+    fragments.push("timestamp <= ?");
+    bindings.push(new Date(filter.endDate).toISOString());
+  }
+
+  const sql = fragments.length ? `WHERE ${fragments.join(" AND ")}` : "";
+  return { sql, bindings };
 }
 
 export async function getRequestDetails(filter = {}) {
   const db = await getAdapter();
-  const conds = [];
-  const params = [];
+  const { sql: whereSql, bindings } = buildWhereClause(filter);
 
-  if (filter.provider) { conds.push("provider = ?"); params.push(filter.provider); }
-  if (filter.model) { conds.push("model = ?"); params.push(filter.model); }
-  if (filter.connectionId) { conds.push("connectionId = ?"); params.push(filter.connectionId); }
-  if (filter.status) { conds.push("status = ?"); params.push(filter.status); }
-  if (filter.startDate) { conds.push("timestamp >= ?"); params.push(new Date(filter.startDate).toISOString()); }
-  if (filter.endDate) { conds.push("timestamp <= ?"); params.push(new Date(filter.endDate).toISOString()); }
-
-  const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
-  const cntRow = db.get(`SELECT COUNT(*) as c FROM requestDetails ${where}`, params);
-  const totalItems = cntRow ? cntRow.c : 0;
+  const countRow = db.get(
+    `SELECT COUNT(*) as c FROM requestDetails ${whereSql}`,
+    bindings
+  );
+  const totalItems = countRow ? countRow.c : 0;
 
   const page = filter.page || 1;
   const pageSize = filter.pageSize || 50;
@@ -163,38 +288,48 @@ export async function getRequestDetails(filter = {}) {
   const offset = (page - 1) * pageSize;
 
   const rows = db.all(
-    `SELECT data FROM requestDetails ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
-    [...params, pageSize, offset]
+    `SELECT data FROM requestDetails ${whereSql} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+    [...bindings, pageSize, offset]
   );
-  const details = rows.map((r) => parseJson(r.data, {}));
+
+  const details = rows.map((row) => parseJson(row.data, {}));
 
   return {
     details,
-    pagination: { page, pageSize, totalItems, totalPages, hasNext: page < totalPages, hasPrev: page > 1 },
+    pagination: {
+      page,
+      pageSize,
+      totalItems,
+      totalPages,
+      hasNext: page < totalPages,
+      hasPrev: page > 1,
+    },
   };
 }
 
 export async function getRequestDetailById(id) {
   const db = await getAdapter();
   const row = db.get(`SELECT data FROM requestDetails WHERE id = ?`, [id]);
-  return row ? parseJson(row.data, null) : null;
+  if (!row) return null;
+  return parseJson(row.data, null);
 }
 
-const _shutdownHandler = async () => {
-  if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-  if (writeBuffer.length > 0) await flushToDatabase();
+// ---------------------------------------------------------------------------
+// Process lifecycle: drain anything still queued when the process is going
+// away. Listeners are de-registered first so re-imports stay idempotent.
+// ---------------------------------------------------------------------------
+const TERMINATION_EVENTS = ["beforeExit", "SIGINT", "SIGTERM", "exit"];
+
+const onProcessExit = async () => {
+  cancelDeferredFlush();
+  if (queueState.pending.length > 0) {
+    await drainQueue();
+  }
 };
 
-function ensureShutdownHandler() {
-  process.off("beforeExit", _shutdownHandler);
-  process.off("SIGINT", _shutdownHandler);
-  process.off("SIGTERM", _shutdownHandler);
-  process.off("exit", _shutdownHandler);
-
-  process.on("beforeExit", _shutdownHandler);
-  process.on("SIGINT", _shutdownHandler);
-  process.on("SIGTERM", _shutdownHandler);
-  process.on("exit", _shutdownHandler);
+function attachLifecycleHooks() {
+  for (const evt of TERMINATION_EVENTS) process.off(evt, onProcessExit);
+  for (const evt of TERMINATION_EVENTS) process.on(evt, onProcessExit);
 }
 
-ensureShutdownHandler();
+attachLifecycleHooks();
