@@ -9,13 +9,13 @@
   
   [![npm](https://img.shields.io/npm/v/lina-router.svg)](https://www.npmjs.com/package/lina-router)
   [![Downloads](https://img.shields.io/npm/dm/lina-router.svg)](https://www.npmjs.com/package/lina-router)
-  [![License](https://img.shields.io/npm/l/lina-router.svg)](https://github.com/decolua/lina-router/blob/main/LICENSE)
+  [![License](https://img.shields.io/npm/l/lina-router.svg)](https://github.com/spooky-may/lina-routerr/blob/main/LICENSE)
 
-  <a href="https://trendshift.io/repositories/22628" target="_blank"><img src="https://trendshift.io/api/badge/repositories/22628" alt="decolua%2Flina-router | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+  <a href="https://trendshift.io/repositories/22628" target="_blank"><img src="https://trendshift.io/api/badge/repositories/22628" alt="spooky-may%2Flina-routerr | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
   
   [🚀 Quick Start](#-quick-start) • [💡 Features](#-key-features) • [📖 Setup](#-setup-guide) • [🌐 Website](https://lina-router.com)
 
-  [🇻🇳 Tiếng Việt](./i18n/README.vi.md) • [🇨🇳 中文](./i18n/README.zh-CN.md) • [🇯🇵 日本語](./i18n/README.ja-JP.md)
+  
 </div>
 
 ---
@@ -172,7 +172,7 @@ Default URLs:
 
 </div>
 
-> 🎬 **Made a video about LINA Router?** Submit a [Pull Request](https://github.com/decolua/lina-router/pulls) adding your video to this section — we'll merge it!
+> 🎬 **Made a video about LINA Router?** Submit a [Pull Request](https://github.com/spooky-may/lina-routerr/pulls) adding your video to this section — we'll merge it!
 
 ---
 
@@ -1019,7 +1019,7 @@ Model: cc/claude-opus-4-7
 
 ```bash
 # Clone and install
-git clone https://github.com/decolua/lina-router.git
+git clone https://github.com/spooky-may/lina-routerr.git
 cd lina-router
 npm install
 npm run build
@@ -1264,8 +1264,8 @@ Authorization: Bearer your-api-key
 ## 📧 Support
 
 - **Website**: [lina-router.com](https://lina-router.com)
-- **GitHub**: [github.com/decolua/lina-router](https://github.com/decolua/lina-router)
-- **Issues**: [github.com/decolua/lina-router/issues](https://github.com/decolua/lina-router/issues)
+- **GitHub**: [github.com/spooky-may/lina-routerr](https://github.com/spooky-may/lina-routerr)
+- **Issues**: [github.com/spooky-may/lina-routerr/issues](https://github.com/spooky-may/lina-routerr/issues)
 
 ---
 
@@ -1273,13 +1273,13 @@ Authorization: Bearer your-api-key
 
 Thanks to all contributors who helped make LINA Router better!
 
-[![Contributors](https://contrib.rocks/image?repo=decolua/lina-router&max=150&columns=15&anon=1&v=20260309)](https://github.com/decolua/lina-router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=spooky-may/lina-routerr&max=150&columns=15&anon=1&v=20260309)](https://github.com/spooky-may/lina-routerr/graphs/contributors)
 
 ---
 
 ## 📊 Star Chart
 
-[![Star Chart](https://starchart.cc/decolua/lina-router.svg?variant=adaptive)](https://starchart.cc/decolua/lina-router)
+[![Star Chart](https://starchart.cc/spooky-may/lina-routerr.svg?variant=adaptive)](https://starchart.cc/spooky-may/lina-routerr)
 
 
 
